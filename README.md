@@ -1,16 +1,27 @@
-# React + Vite
+# CodeStack Schedule 🎓✨
 
-This template provides a minimal setup to get React working in Vite with HMR and some Oxlint rules.
+Aplikasi Manajemen Jadwal Belajar, Tugas, dan Rekomendasi Waktu Belajar Cerdas berbasis React, Vite, dan **Supabase Cloud Database**.
 
-Currently, two official plugins are available:
+## 🌟 Fitur Utama
+- **Jadwal & Tugas Interaktif**: Tampilan Harian, Mingguan, dan Bulanan dengan penanda prioritas dan progres.
+- **Rekomendasi Waktu Belajar AI (AI StudyMate)**: Menemukan slot belajar terbaik berdasarkan tingkat kesulitan tugas dan preferensi jam produktif.
+- **Supabase Cloud Database**: Sinkronisasi data real-time, backup otomatis ke PostgreSQL cloud, dan multi-device support.
+- **Offline-First & Hybrid Sync**: Tetap bekerja lancar tanpa koneksi internet (Local Storage) dan otomatis tersinkronisasi saat terhubung ke cloud.
+- **Google Calendar Sync**: Ekspor jadwal dan tugas ke format Google Calendar / iCal.
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
+## 🚀 Memulai Aplikasi
 
-## React Compiler
+```bash
+# 1. Install dependensi
+npm install
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+# 2. Jalankan server pengembangan
+npm run dev
 
-## Expanding the Oxlint configuration
+# 3. Build untuk produksi
+npm run build
+```
 
-If you are developing a production application, we recommend using TypeScript with type-aware lint rules enabled. Check out the [TS template](https://github.com/vitejs/vite/tree/main/packages/create-vite/template-react-ts) for information on how to integrate TypeScript and Oxlint's TypeScript related rules in your project.
+## ☁️ Menghubungkan ke Supabase Cloud
+Lihat panduan lengkap langkah demi langkah di file [SUPABASE_SETUP.md](./SUPABASE_SETUP.md) atau klik tombol **"Supabase Setup ⚡"** di navbar aplikasi!
+

@@ -1,4 +1,16 @@
 // src/services/storage.js
+import { isSupabaseConfigured } from './supabaseClient';
+import {
+  syncTaskToSupabase,
+  deleteTaskFromSupabase,
+  syncScheduleToSupabase,
+  deleteScheduleFromSupabase,
+  syncCourseToSupabase,
+  syncFriendsToSupabase,
+  syncNotesToSupabase,
+  upsertSupabaseProfile,
+  fetchAllUserDataFromSupabase,
+} from './supabaseService';
 
 // Default pastel palette references
 export const PASTEL_COLORS = [
@@ -66,8 +78,12 @@ export const registerUser = ({
   const defaultSemester = isSMA ? 'Kelas 11' : 'Semester 4';
   const defaultSchool = isSMA ? 'Mutiara Bangsa 2 School' : 'Universitas Indonesia';
 
+  const defaultId = email.toLowerCase().includes('tjandrawilson')
+    ? 'user-tjandra-wilson-live'
+    : generateId('user');
+
   const newUser = {
-    id: generateId('user'),
+    id: id || defaultId,
     name: name.trim(),
     email: email.trim().toLowerCase(),
     passwordHash: password, // In client-side prototype we store securely formatted string
@@ -87,6 +103,14 @@ export const registerUser = ({
 
   // Set session
   setSession(newUser, rememberMe);
+
+  // Sync profile to Supabase if configured
+  if (isSupabaseConfigured()) {
+    upsertSupabaseProfile(newUser).catch((e) =>
+      console.warn('Supabase profile sync warning:', e)
+    );
+  }
+
   return newUser;
 };
 
@@ -108,6 +132,7 @@ export const ensureDefaultUser = () => {
   const users = getStoredUsers();
   if (users.length === 0) {
     const defaultUser = registerUser({
+      id: 'user-tjandra-wilson-live',
       name: 'Tjandra Wilson',
       email: 'tjandrawilson@mutiarabangsa.sch.id',
       password: 'password123',
@@ -306,13 +331,21 @@ export const getTasks = (userId) => {
 
 export const saveTask = (userId, task) => {
   const data = getUserData(userId) || { tasks: [] };
-  const existingIndex = data.tasks.findIndex((t) => t.id === task.id);
+  const taskToSave = { ...task, id: task.id || generateId('tsk') };
+  const existingIndex = data.tasks.findIndex((t) => t.id === taskToSave.id);
   if (existingIndex >= 0) {
-    data.tasks[existingIndex] = { ...data.tasks[existingIndex], ...task };
+    data.tasks[existingIndex] = { ...data.tasks[existingIndex], ...taskToSave };
   } else {
-    data.tasks.push({ ...task, id: task.id || generateId('tsk') });
+    data.tasks.push(taskToSave);
   }
   saveUserData(userId, data);
+
+  if (isSupabaseConfigured() && userId) {
+    syncTaskToSupabase(userId, taskToSave).catch((e) =>
+      console.warn('Supabase save task sync warning:', e)
+    );
+  }
+
   return data.tasks;
 };
 
@@ -321,25 +354,41 @@ export const deleteTask = (userId, taskId) => {
   if (!data) return [];
   data.tasks = data.tasks.filter((t) => t.id !== taskId);
   saveUserData(userId, data);
+
+  if (isSupabaseConfigured() && taskId) {
+    deleteTaskFromSupabase(taskId).catch((e) =>
+      console.warn('Supabase delete task sync warning:', e)
+    );
+  }
+
   return data.tasks;
 };
 
 export const toggleTaskStatus = (userId, taskId) => {
   const data = getUserData(userId);
   if (!data) return [];
+  let updatedTask = null;
   data.tasks = data.tasks.map((t) => {
     if (t.id === taskId) {
       const willBeCompleted = !t.isCompleted;
-      return {
+      updatedTask = {
         ...t,
         isCompleted: willBeCompleted,
         status: willBeCompleted ? 'completed' : 'in_progress',
         completedAt: willBeCompleted ? new Date().toISOString() : null,
       };
+      return updatedTask;
     }
     return t;
   });
   saveUserData(userId, data);
+
+  if (isSupabaseConfigured() && userId && updatedTask) {
+    syncTaskToSupabase(userId, updatedTask).catch((e) =>
+      console.warn('Supabase toggle task sync warning:', e)
+    );
+  }
+
   return data.tasks;
 };
 
@@ -351,13 +400,21 @@ export const getSchedules = (userId) => {
 
 export const saveSchedule = (userId, schedule) => {
   const data = getUserData(userId) || { schedules: [] };
-  const existingIndex = data.schedules.findIndex((s) => s.id === schedule.id);
+  const scheduleToSave = { ...schedule, id: schedule.id || generateId('sch') };
+  const existingIndex = data.schedules.findIndex((s) => s.id === scheduleToSave.id);
   if (existingIndex >= 0) {
-    data.schedules[existingIndex] = { ...data.schedules[existingIndex], ...schedule };
+    data.schedules[existingIndex] = { ...data.schedules[existingIndex], ...scheduleToSave };
   } else {
-    data.schedules.push({ ...schedule, id: schedule.id || generateId('sch') });
+    data.schedules.push(scheduleToSave);
   }
   saveUserData(userId, data);
+
+  if (isSupabaseConfigured() && userId) {
+    syncScheduleToSupabase(userId, scheduleToSave).catch((e) =>
+      console.warn('Supabase schedule sync warning:', e)
+    );
+  }
+
   return data.schedules;
 };
 
@@ -366,6 +423,13 @@ export const deleteSchedule = (userId, scheduleId) => {
   if (!data) return [];
   data.schedules = data.schedules.filter((s) => s.id !== scheduleId);
   saveUserData(userId, data);
+
+  if (isSupabaseConfigured() && scheduleId) {
+    deleteScheduleFromSupabase(scheduleId).catch((e) =>
+      console.warn('Supabase delete schedule sync warning:', e)
+    );
+  }
+
   return data.schedules;
 };
 
@@ -382,13 +446,21 @@ export const getCourses = (userId) => {
 
 export const saveCourse = (userId, course) => {
   const data = getUserData(userId) || { courses: [] };
-  const existingIndex = data.courses.findIndex((c) => c.id === course.id);
+  const courseToSave = { ...course, id: course.id || generateId('crs') };
+  const existingIndex = data.courses.findIndex((c) => c.id === courseToSave.id);
   if (existingIndex >= 0) {
-    data.courses[existingIndex] = { ...data.courses[existingIndex], ...course };
+    data.courses[existingIndex] = { ...data.courses[existingIndex], ...courseToSave };
   } else {
-    data.courses.push({ ...course, id: course.id || generateId('crs') });
+    data.courses.push(courseToSave);
   }
   saveUserData(userId, data);
+
+  if (isSupabaseConfigured() && userId) {
+    syncCourseToSupabase(userId, courseToSave).catch((e) =>
+      console.warn('Supabase course sync warning:', e)
+    );
+  }
+
   return data.courses;
 };
 
@@ -407,6 +479,13 @@ export const saveFriends = (userId, friends) => {
   const data = getUserData(userId) || {};
   data.friends = friends;
   saveUserData(userId, data);
+
+  if (isSupabaseConfigured() && userId) {
+    syncFriendsToSupabase(userId, friends).catch((e) =>
+      console.warn('Supabase friends sync warning:', e)
+    );
+  }
+
   return data.friends;
 };
 
@@ -460,6 +539,40 @@ export const saveNotes = (userId, notes) => {
   const data = getUserData(userId) || {};
   data.notes = notes;
   saveUserData(userId, data);
+
+  if (isSupabaseConfigured() && userId) {
+    syncNotesToSupabase(userId, notes).catch((e) =>
+      console.warn('Supabase notes sync warning:', e)
+    );
+  }
+
   return data.notes;
 };
+
+/**
+ * Pull and merge latest cloud data from Supabase for cross-device sync.
+ */
+export const pullDataFromSupabase = async (userId) => {
+  if (!isSupabaseConfigured() || !userId) return null;
+  try {
+    const cloud = await fetchAllUserDataFromSupabase(userId);
+    if (!cloud) return null;
+
+    const localData = getUserData(userId) || {};
+    const merged = {
+      ...localData,
+      tasks: cloud.tasks?.length ? cloud.tasks : localData.tasks || [],
+      schedules: cloud.schedules?.length ? cloud.schedules : localData.schedules || [],
+      courses: cloud.courses?.length ? cloud.courses : localData.courses || [],
+      friends: cloud.friends?.length ? cloud.friends : localData.friends || [],
+      notes: cloud.notes?.length ? cloud.notes : localData.notes || [],
+    };
+    saveUserData(userId, merged);
+    return merged;
+  } catch (err) {
+    console.error('Error pulling Supabase data:', err);
+    return null;
+  }
+};
+
 

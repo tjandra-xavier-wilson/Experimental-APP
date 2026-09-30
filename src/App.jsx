@@ -14,7 +14,9 @@ import {
   getNotes,
   saveNotes,
   saveUsers,
+  pullDataFromSupabase,
 } from './services/storage';
+import { isSupabaseConfigured } from './services/supabaseClient';
 import { requestNotificationPermission, triggerReminderAlert } from './services/notificationService';
 import { Sidebar } from './components/Sidebar';
 import { ProductivityPanel } from './components/ProductivityPanel';
@@ -30,6 +32,7 @@ import { AIRecommenderModal } from './components/AIRecommenderModal';
 import { CalendarSyncModal } from './components/CalendarSyncModal';
 import { NotesModal } from './components/NotesModal';
 import { SettingsModal } from './components/SettingsModal';
+import { SupabaseModal } from './components/SupabaseModal';
 
 export function App() {
   // Session & User State
@@ -59,6 +62,7 @@ export function App() {
   const [isCalendarSyncOpen, setIsCalendarSyncOpen] = useState(false);
   const [isNotesModalOpen, setIsNotesModalOpen] = useState(false);
   const [isSettingsModalOpen, setIsSettingsModalOpen] = useState(false);
+  const [isSupabaseModalOpen, setIsSupabaseModalOpen] = useState(false);
 
   // 1. Initial Session Check (Load or Ensure Default User Tjandra)
   useEffect(() => {
@@ -88,6 +92,21 @@ export function App() {
     }
     setFriends(getFriends(user.id));
     setNotes(getNotes(user.id));
+
+    // If Supabase Cloud is configured, pull latest remote data in background
+    if (isSupabaseConfigured() && user?.id) {
+      pullDataFromSupabase(user.id)
+        .then((merged) => {
+          if (merged) {
+            if (merged.tasks) setTasks(merged.tasks);
+            if (merged.schedules) setSchedules(merged.schedules);
+            if (merged.courses) setCourses(merged.courses);
+            if (merged.friends) setFriends(merged.friends);
+            if (merged.notes) setNotes(merged.notes);
+          }
+        })
+        .catch((e) => console.warn('Cloud sync error on load:', e));
+    }
   };
 
   // Auth Handlers
@@ -201,6 +220,7 @@ export function App() {
         }}
         onOpenNotesModal={() => setIsNotesModalOpen(true)}
         onOpenSettingsModal={() => setIsSettingsModalOpen(true)}
+        onOpenSupabaseModal={() => setIsSupabaseModalOpen(true)}
         user={currentUser}
       />
 
@@ -239,6 +259,7 @@ export function App() {
             setAiSelectedTask(null);
             setIsAIModalOpen(true);
           }}
+          onOpenSupabaseModal={() => setIsSupabaseModalOpen(true)}
           onLogout={handleLogout}
           reminders={reminders}
         />
@@ -358,6 +379,16 @@ export function App() {
         onClose={() => setIsSettingsModalOpen(false)}
         user={currentUser}
         onUpdateUser={handleUpdateUser}
+        onOpenSupabaseModal={() => setIsSupabaseModalOpen(true)}
+      />
+
+      <SupabaseModal
+        isOpen={isSupabaseModalOpen}
+        onClose={() => setIsSupabaseModalOpen(false)}
+        user={currentUser}
+        onDataSynced={() => {
+          if (currentUser) loadUserData(currentUser);
+        }}
       />
     </div>
   );

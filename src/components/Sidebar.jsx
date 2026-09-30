@@ -7,6 +7,7 @@ import {
   FileText,
   ListTodo,
   Wrench,
+  Database,
 } from 'lucide-react';
 
 import { ICTLogo } from './ICTLogo';
@@ -42,6 +43,7 @@ export const Sidebar = ({
   onOpenTaskModal,
   onOpenNotesModal,
   onOpenSettingsModal,
+  onOpenSupabaseModal,
   user,
 }) => {
   const [hoveredTab, setHoveredTab] = useState(null);
@@ -88,6 +90,13 @@ export const Sidebar = ({
       sublabel: 'Tampilan Mingguan & Bulanan',
       icon: ListTodo,
       onClick: () => onSelectTab && onSelectTab('plans'),
+    },
+    {
+      id: 'supabase',
+      label: 'Supabase Cloud',
+      sublabel: 'Koneksi & Sinkronisasi Database',
+      icon: Database,
+      onClick: () => onOpenSupabaseModal && onOpenSupabaseModal(),
     },
     {
       id: 'settings',
