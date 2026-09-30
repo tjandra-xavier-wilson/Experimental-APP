@@ -17,14 +17,19 @@ import {
   Search,
   Check,
   Calendar,
+  Database,
 } from 'lucide-react';
 import { ICTLogo } from './ICTLogo';
 import { registerUser, loginUser } from '../services/storage';
+import { isSupabaseConfigured } from '../services/supabaseClient';
+import { supabaseSignIn, supabaseSignUp } from '../services/supabaseService';
+import { SupabaseModal } from './SupabaseModal';
 
 export const AuthScreen = ({ isOpen = true, onAuthSuccess }) => {
   const [isSignUp, setIsSignUp] = useState(false);
   const [rememberMe, setRememberMe] = useState(true);
   const [showPassword, setShowPassword] = useState(false);
+  const [isSupabaseModalOpen, setIsSupabaseModalOpen] = useState(false);
   const [error, setError] = useState('');
 
   // Form State
@@ -138,6 +143,20 @@ export const AuthScreen = ({ isOpen = true, onAuthSuccess }) => {
           rememberMe,
         });
 
+        // Supabase cloud sign-up if configured
+        if (isSupabaseConfigured()) {
+          supabaseSignUp({
+            email: formData.email.trim(),
+            password: formData.password,
+            name: formData.name.trim(),
+            educationLevel: formData.educationLevel,
+            schoolName: formData.schoolName,
+            major: finalMajor,
+            semester: finalSemester,
+            studyPreference: formData.studyPreference,
+          }).catch((supaErr) => console.warn('Supabase cloud signup warning:', supaErr.message));
+        }
+
         onAuthSuccess(newUser);
       } else {
         if (!formData.email.trim() || !formData.password.trim()) {
@@ -146,6 +165,14 @@ export const AuthScreen = ({ isOpen = true, onAuthSuccess }) => {
         }
 
         const user = loginUser(formData.email, formData.password, rememberMe);
+
+        // Supabase cloud sign-in if configured
+        if (isSupabaseConfigured()) {
+          supabaseSignIn(formData.email.trim(), formData.password).catch((supaErr) =>
+            console.warn('Supabase cloud signin warning:', supaErr.message)
+          );
+        }
+
         onAuthSuccess(user);
       }
     } catch (err) {
@@ -232,6 +259,39 @@ export const AuthScreen = ({ isOpen = true, onAuthSuccess }) => {
           opacity: 0.6,
           pointerEvents: 'none',
         }}
+      />
+
+      {/* Top Floating Supabase Connection Pill */}
+      <div style={{ position: 'fixed', top: '18px', right: '22px', zIndex: 10000 }}>
+        <button
+          type="button"
+          onClick={() => setIsSupabaseModalOpen(true)}
+          style={{
+            background: isSupabaseConfigured() ? 'rgba(16, 185, 129, 0.2)' : 'rgba(255, 255, 255, 0.12)',
+            border: isSupabaseConfigured() ? '1px solid rgba(16, 185, 129, 0.5)' : '1px solid rgba(255, 255, 255, 0.25)',
+            color: isSupabaseConfigured() ? '#34D399' : '#FFFFFF',
+            padding: '7px 15px',
+            borderRadius: '999px',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '8px',
+            cursor: 'pointer',
+            fontSize: '0.8rem',
+            fontWeight: 600,
+            backdropFilter: 'blur(10px)',
+            boxShadow: '0 4px 15px rgba(0,0,0,0.25)',
+            transition: 'all 0.2s',
+          }}
+          title="Buka pengaturan Supabase Cloud Database"
+        >
+          <Database size={15} />
+          <span>{isSupabaseConfigured() ? 'Supabase Connected 🟢' : 'Setup Supabase Cloud ⚡'}</span>
+        </button>
+      </div>
+
+      <SupabaseModal
+        isOpen={isSupabaseModalOpen}
+        onClose={() => setIsSupabaseModalOpen(false)}
       />
 
       {/* Main Split-Screen Container (Inspired by Image 2) */}

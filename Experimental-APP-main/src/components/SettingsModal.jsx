@@ -1,9 +1,10 @@
 // src/components/SettingsModal.jsx
 import React, { useState } from 'react';
-import { X, Wrench, User, Moon, Sun, Check, Sparkles } from 'lucide-react';
+import { X, Wrench, User, Moon, Sun, Check, Sparkles, Database } from 'lucide-react';
 import { triggerReminderAlert } from '../services/notificationService';
+import { isSupabaseConfigured } from '../services/supabaseClient';
 
-export const SettingsModal = ({ isOpen, onClose, user, onUpdateUser }) => {
+export const SettingsModal = ({ isOpen, onClose, user, onUpdateUser, onOpenSupabaseModal }) => {
   const [name, setName] = useState(user?.name || 'Tjandra Wilson');
   const [schoolName, setSchoolName] = useState(user?.schoolName || 'Mutiara Bangsa 2 School');
   const [major, setMajor] = useState(user?.major || 'IPA');
@@ -135,6 +136,41 @@ export const SettingsModal = ({ isOpen, onClose, user, onUpdateUser }) => {
                 </div>
               ))}
             </div>
+          </div>
+
+          {/* Supabase Integration Shortcut */}
+          <div
+            style={{
+              padding: '12px 14px',
+              borderRadius: 'var(--radius-sm)',
+              background: 'var(--bg-card-subtle)',
+              border: '1px solid var(--border-subtle)',
+              marginBottom: '20px',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+            }}
+          >
+            <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+              <Database size={18} color={isSupabaseConfigured() ? '#10B981' : '#8E94F2'} />
+              <div>
+                <p style={{ margin: 0, fontSize: '0.84rem', fontWeight: 600 }}>Database Cloud Supabase</p>
+                <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>
+                  {isSupabaseConfigured() ? '🟢 Terhubung ke cloud database' : '🟡 Berjalan di local storage'}
+                </span>
+              </div>
+            </div>
+            <button
+              type="button"
+              onClick={() => {
+                onClose();
+                if (onOpenSupabaseModal) onOpenSupabaseModal();
+              }}
+              className="btn-secondary"
+              style={{ padding: '6px 12px', fontSize: '0.78rem' }}
+            >
+              Kelola Koneksi
+            </button>
           </div>
 
           <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px' }}>

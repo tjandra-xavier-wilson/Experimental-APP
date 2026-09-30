@@ -1,5 +1,16 @@
 // src/services/storage.js
-import { supabase } from './supabaseClient.js';
+import { supabase, isSupabaseConfigured } from './supabaseClient.js';
+import {
+  syncTaskToSupabase,
+  deleteTaskFromSupabase,
+  syncScheduleToSupabase,
+  deleteScheduleFromSupabase,
+  syncCourseToSupabase,
+  syncFriendsToSupabase,
+  syncNotesToSupabase,
+  upsertSupabaseProfile,
+  fetchAllUserDataFromSupabase,
+} from './supabaseService.js';
 
 // Safe storage wrapper for Browser, Mobile WebViews, SSR, and Node environments
 const safeLocalStorage = {
@@ -311,6 +322,10 @@ export const fetchCloudUserData = async (userId) => {
   }
 };
 
+export const pullDataFromSupabase = async (userId) => {
+  return await fetchCloudUserData(userId);
+};
+
 export const subscribeToCloudChanges = (userId, onTasksChange) => {
   if (!userId) return () => {};
   try {
@@ -356,6 +371,7 @@ export const saveUsers = (users) => {
 };
 
 export const registerUser = ({
+  id,
   name,
   email,
   password,
@@ -377,10 +393,10 @@ export const registerUser = ({
   const defaultSemester = isSMA ? 'Kelas 11' : 'Semester 4';
   const defaultSchool = isSMA ? 'Mutiara Bangsa 2 School' : 'Universitas Indonesia';
 
-  // Use CANONICAL_USER_ID if it matches Tjandra Wilson, otherwise generate unique
+  // Use CANONICAL_USER_ID if it matches Tjandra Wilson or if ID is provided
   const isDefaultProfile =
     email.trim().toLowerCase() === 'tjandrawilson@mutiarabangsa.sch.id';
-  const userId = isDefaultProfile ? CANONICAL_USER_ID : generateId('user');
+  const userId = id || (isDefaultProfile ? CANONICAL_USER_ID : generateId('user'));
 
   const newUser = {
     id: userId,
@@ -399,23 +415,11 @@ export const registerUser = ({
   saveUsers(users);
 
   // Sync profile to Supabase in background
-  supabase
-    .from('profiles')
-    .upsert({
-      id: newUser.id,
-      email: newUser.email,
-      name: newUser.name,
-      education_level: newUser.educationLevel,
-      school_name: newUser.schoolName,
-      major: newUser.major,
-      semester: newUser.semester,
-      study_preference: newUser.studyPreference,
-      updated_at: new Date().toISOString(),
-    })
-    .then(({ error }) => {
-      if (error) console.warn('Supabase profile upsert error:', error);
-    })
-    .catch((err) => console.warn('Supabase profile upsert exception:', err));
+  if (isSupabaseConfigured()) {
+    upsertSupabaseProfile(newUser).catch((e) =>
+      console.warn('Supabase profile sync warning:', e)
+    );
+  }
 
   initStarterData(newUser);
   setSession(newUser, rememberMe);
@@ -459,22 +463,19 @@ export const ensureDefaultUser = () => {
     return existing;
   }
 
-  const defaultUser = {
+  const defaultUser = registerUser({
     id: CANONICAL_USER_ID,
     name: 'Tjandra Wilson',
     email: 'tjandrawilson@mutiarabangsa.sch.id',
-    passwordHash: 'password123',
+    password: 'password123',
     educationLevel: 'Siswa SMA/SMK',
     schoolName: 'Mutiara Bangsa 2 School',
     major: 'IPA',
     semester: 'Kelas 11',
     studyPreference: 'balanced',
-    createdAt: '2026-09-30T03:03:45.724102+00:00',
-  };
+    rememberMe: true,
+  });
 
-  users.push(defaultUser);
-  saveUsers(users);
-  setSession(defaultUser, true);
   return defaultUser;
 };
 
@@ -585,14 +586,11 @@ export const saveTask = (userId, task) => {
   saveUserData(userId, data);
 
   // Background sync to Supabase
-  const row = taskToSupabase(fullTask, userId);
-  supabase
-    .from('tasks')
-    .upsert(row)
-    .then(({ error }) => {
-      if (error) console.error('Supabase saveTask error:', error);
-    })
-    .catch((err) => console.error('Supabase saveTask exception:', err));
+  if (isSupabaseConfigured() && userId) {
+    syncTaskToSupabase(userId, fullTask).catch((e) =>
+      console.warn('Supabase save task sync warning:', e)
+    );
+  }
 
   return data.tasks;
 };
@@ -605,14 +603,11 @@ export const deleteTask = (userId, taskId) => {
   }
 
   // Background sync to Supabase
-  supabase
-    .from('tasks')
-    .delete()
-    .eq('id', taskId)
-    .then(({ error }) => {
-      if (error) console.error('Supabase deleteTask error:', error);
-    })
-    .catch((err) => console.error('Supabase deleteTask exception:', err));
+  if (isSupabaseConfigured() && taskId) {
+    deleteTaskFromSupabase(taskId).catch((e) =>
+      console.warn('Supabase delete task sync warning:', e)
+    );
+  }
 
   return data?.tasks || [];
 };
@@ -638,20 +633,10 @@ export const toggleTaskStatus = (userId, taskId) => {
   saveUserData(userId, data);
 
   // Background sync to Supabase
-  if (targetTask) {
-    supabase
-      .from('tasks')
-      .update({
-        is_completed: targetTask.isCompleted,
-        status: targetTask.status,
-        completed_at: targetTask.completedAt,
-        updated_at: new Date().toISOString(),
-      })
-      .eq('id', taskId)
-      .then(({ error }) => {
-        if (error) console.error('Supabase toggleTaskStatus error:', error);
-      })
-      .catch((err) => console.error('Supabase toggleTaskStatus exception:', err));
+  if (isSupabaseConfigured() && userId && targetTask) {
+    syncTaskToSupabase(userId, targetTask).catch((e) =>
+      console.warn('Supabase toggle task sync warning:', e)
+    );
   }
 
   return data.tasks;
@@ -682,14 +667,11 @@ export const saveSchedule = (userId, schedule) => {
   saveUserData(userId, data);
 
   // Background sync to Supabase
-  const row = scheduleToSupabase(fullSch, userId);
-  supabase
-    .from('schedules')
-    .upsert(row)
-    .then(({ error }) => {
-      if (error) console.error('Supabase saveSchedule error:', error);
-    })
-    .catch((err) => console.error('Supabase saveSchedule exception:', err));
+  if (isSupabaseConfigured() && userId) {
+    syncScheduleToSupabase(userId, fullSch).catch((e) =>
+      console.warn('Supabase schedule sync warning:', e)
+    );
+  }
 
   return data.schedules;
 };
@@ -701,14 +683,11 @@ export const deleteSchedule = (userId, scheduleId) => {
     saveUserData(userId, data);
   }
 
-  supabase
-    .from('schedules')
-    .delete()
-    .eq('id', scheduleId)
-    .then(({ error }) => {
-      if (error) console.error('Supabase deleteSchedule error:', error);
-    })
-    .catch((err) => console.error('Supabase deleteSchedule exception:', err));
+  if (isSupabaseConfigured() && scheduleId) {
+    deleteScheduleFromSupabase(scheduleId).catch((e) =>
+      console.warn('Supabase delete schedule sync warning:', e)
+    );
+  }
 
   return data?.schedules || [];
 };
@@ -742,14 +721,11 @@ export const saveCourse = (userId, course) => {
   }
   saveUserData(userId, data);
 
-  const row = courseToSupabase(fullCrs, userId);
-  supabase
-    .from('courses')
-    .upsert(row)
-    .then(({ error }) => {
-      if (error) console.error('Supabase saveCourse error:', error);
-    })
-    .catch((err) => console.error('Supabase saveCourse exception:', err));
+  if (isSupabaseConfigured() && userId) {
+    syncCourseToSupabase(userId, fullCrs).catch((e) =>
+      console.warn('Supabase course sync warning:', e)
+    );
+  }
 
   return data.courses;
 };
@@ -770,6 +746,13 @@ export const saveFriends = (userId, friends) => {
   const data = getUserData(userId) || {};
   data.friends = friends;
   saveUserData(userId, data);
+
+  if (isSupabaseConfigured() && userId) {
+    syncFriendsToSupabase(userId, friends).catch((e) =>
+      console.warn('Supabase friends sync warning:', e)
+    );
+  }
+
   return data.friends;
 };
 
@@ -804,16 +787,6 @@ export const addFriend = (userId, friendData) => {
 
   const updated = [newFriend, ...current];
   saveFriends(userId, updated);
-
-  const row = friendToSupabase(newFriend, userId);
-  supabase
-    .from('friends')
-    .upsert(row)
-    .then(({ error }) => {
-      if (error) console.error('Supabase addFriend error:', error);
-    })
-    .catch((err) => console.error('Supabase addFriend exception:', err));
-
   return updated;
 };
 
@@ -842,15 +815,10 @@ export const saveNotes = (userId, notes) => {
   data.notes = notes;
   saveUserData(userId, data);
 
-  // Sync to Supabase
-  if (Array.isArray(notes)) {
-    notes.forEach((note) => {
-      const row = noteToSupabase(note, userId);
-      supabase
-        .from('notes')
-        .upsert(row)
-        .catch((err) => console.error('Supabase saveNotes error:', err));
-    });
+  if (isSupabaseConfigured() && userId) {
+    syncNotesToSupabase(userId, notes).catch((e) =>
+      console.warn('Supabase notes sync warning:', e)
+    );
   }
 
   return data.notes;

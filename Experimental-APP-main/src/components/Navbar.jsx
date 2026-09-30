@@ -11,9 +11,11 @@ import {
   User,
   ExternalLink,
   Plus,
+  Database,
 } from 'lucide-react';
 
 import { ICTLogo } from './ICTLogo';
+import { isSupabaseConfigured } from '../services/supabaseClient';
 
 export const Navbar = ({
   user,
@@ -23,6 +25,7 @@ export const Navbar = ({
   onOpenClassModal,
   onOpenCalendarSync,
   onOpenAIRecommender,
+  onOpenSupabaseModal,
   onLogout,
   reminders = [],
 }) => {
@@ -163,6 +166,27 @@ export const Navbar = ({
 
         {/* Right Action Bar */}
         <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+          {/* Supabase Cloud Database Status Pill & Trigger */}
+          <button
+            type="button"
+            onClick={onOpenSupabaseModal}
+            className={`pastel-badge ${isSupabaseConfigured() ? 'badge-mint' : 'badge-lavender'}`}
+            title="Klik untuk membuka pengaturan koneksi Supabase Cloud Database"
+            style={{
+              cursor: 'pointer',
+              fontSize: '0.75rem',
+              border: 'none',
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: '6px',
+              padding: '5px 10px',
+              transition: 'all var(--transition-fast)',
+            }}
+          >
+            <Database size={13} />
+            <span>{isSupabaseConfigured() ? 'Supabase Sync 🟢' : 'Supabase Setup ⚡'}</span>
+          </button>
+
           {/* Cloud Sync Status Pill */}
           <div
             className={`pastel-badge ${isOnline ? 'badge-mint' : 'badge-peach'}`}
