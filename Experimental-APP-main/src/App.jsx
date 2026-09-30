@@ -14,6 +14,8 @@ import {
   getNotes,
   saveNotes,
   saveUsers,
+  fetchCloudUserData,
+  subscribeToCloudChanges,
 } from './services/storage';
 import { requestNotificationPermission, triggerReminderAlert } from './services/notificationService';
 import { Sidebar } from './components/Sidebar';
@@ -60,19 +62,43 @@ export function App() {
   const [isNotesModalOpen, setIsNotesModalOpen] = useState(false);
   const [isSettingsModalOpen, setIsSettingsModalOpen] = useState(false);
 
-  // 1. Initial Session Check (Load or Ensure Default User Tjandra)
+  // 1. Initial Session & Supabase Cloud Sync
   useEffect(() => {
-    const session = getCurrentSession();
-    if (session && session.user) {
-      loadUserData(session.user);
-    } else {
-      // Auto-seed default user Tjandra
-      const user = ensureDefaultUser();
+    let unsubscribe = null;
+
+    const init = async () => {
+      const session = getCurrentSession();
+      const user = session?.user || ensureDefaultUser();
       loadUserData(user);
-    }
+
+      // Fetch fresh data from Supabase Cloud
+      try {
+        const cloudData = await fetchCloudUserData(user.id);
+        if (cloudData) {
+          if (cloudData.tasks && cloudData.tasks.length > 0) setTasks(cloudData.tasks);
+          if (cloudData.schedules && cloudData.schedules.length > 0) setSchedules(cloudData.schedules);
+          if (cloudData.courses && cloudData.courses.length > 0) setCourses(cloudData.courses);
+          if (cloudData.friends && cloudData.friends.length > 0) setFriends(cloudData.friends);
+          if (cloudData.notes && cloudData.notes.length > 0) setNotes(cloudData.notes);
+        }
+      } catch (err) {
+        console.warn('Supabase initial fetch warning:', err);
+      }
+
+      // Realtime subscription for cross-device updates (Laptop <-> HP)
+      unsubscribe = subscribeToCloudChanges(user.id, (freshTasks) => {
+        if (freshTasks) setTasks(freshTasks);
+      });
+    };
+
+    init();
 
     // Ask for browser notification permission gently
     requestNotificationPermission();
+
+    return () => {
+      if (unsubscribe) unsubscribe();
+    };
   }, []);
 
   // Helper to load user bundle
@@ -91,9 +117,23 @@ export function App() {
   };
 
   // Auth Handlers
-  const handleAuthSuccess = (user) => {
+  const handleAuthSuccess = async (user) => {
     loadUserData(user);
     setIsAuthOpen(false);
+
+    try {
+      const cloudData = await fetchCloudUserData(user.id);
+      if (cloudData) {
+        if (cloudData.tasks && cloudData.tasks.length > 0) setTasks(cloudData.tasks);
+        if (cloudData.schedules && cloudData.schedules.length > 0) setSchedules(cloudData.schedules);
+        if (cloudData.courses && cloudData.courses.length > 0) setCourses(cloudData.courses);
+        if (cloudData.friends && cloudData.friends.length > 0) setFriends(cloudData.friends);
+        if (cloudData.notes && cloudData.notes.length > 0) setNotes(cloudData.notes);
+      }
+    } catch (err) {
+      console.warn('Supabase auth cloud fetch warning:', err);
+    }
+
     triggerReminderAlert(
       `Selamat datang, ${user.name}!`,
       `Akun ${user.educationLevel} (${user.major}) siap digunakan di CodeStack Schedule.`

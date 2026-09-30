@@ -163,14 +163,18 @@ export const Navbar = ({
 
         {/* Right Action Bar */}
         <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-          {/* Offline Mode Status Pill */}
+          {/* Cloud Sync Status Pill */}
           <div
             className={`pastel-badge ${isOnline ? 'badge-mint' : 'badge-peach'}`}
-            title={isOnline ? 'Terhubung dengan jaringan (Data tersimpan lokal & online)' : 'Bekerja dalam Mode Offline (Data tersimpan di perangkat)'}
+            title={
+              isOnline
+                ? 'Terhubung dengan Supabase Cloud (Sinkronisasi Multi-Perangkat Aktif)'
+                : 'Bekerja dalam Mode Offline (Data tersimpan lokal di perangkat)'
+            }
             style={{ cursor: 'help', fontSize: '0.75rem' }}
           >
             {isOnline ? <Wifi size={13} /> : <WifiOff size={13} />}
-            <span>{isOnline ? 'Online Ready' : 'Mode Offline'}</span>
+            <span>{isOnline ? 'Cloud Sync Aktif' : 'Mode Offline'}</span>
           </div>
 
           {/* AI Study Recommendation Trigger */}
