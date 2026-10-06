@@ -1,40 +1,17 @@
-// src/components/Sidebar.jsx
 import React, { useState } from 'react';
 import {
   LayoutGrid,
+  TrendingUp,
   BookOpen,
   ClipboardList,
   FileText,
   ListTodo,
+  Users,
   Wrench,
   Database,
 } from 'lucide-react';
 
 import { ICTLogo } from './ICTLogo';
-
-// Custom Thick Yellow Pointer / Cursor Icon for 'Utama / Navigasi Aktif' (Image 1 style)
-const YellowPointerIcon = ({ size = 22, isActive = true }) => (
-  <svg
-    width={size}
-    height={size}
-    viewBox="0 0 24 24"
-    fill="none"
-    xmlns="http://www.w3.org/2000/svg"
-    style={{
-      filter: isActive ? 'drop-shadow(0 2px 6px rgba(245, 158, 11, 0.55))' : 'none',
-      transition: 'transform 180ms ease',
-    }}
-  >
-    <path
-      d="M4.5 3.5L11.8 20.8L14.6 13.9L21.5 11.1L4.5 3.5Z"
-      fill="#FBBF24"
-      stroke="#D97706"
-      strokeWidth="2.4"
-      strokeLinejoin="round"
-      strokeLinecap="round"
-    />
-  </svg>
-);
 
 export const Sidebar = ({
   activeTab = 'dashboard',
@@ -50,13 +27,6 @@ export const Sidebar = ({
 
   const menuItems = [
     {
-      id: 'main',
-      label: 'Menu Utama',
-      sublabel: 'Kembali ke Dashboard Utama',
-      isCustomYellow: true,
-      onClick: () => onSelectTab && onSelectTab('dashboard'),
-    },
-    {
       id: 'dashboard',
       label: 'Dashboard',
       sublabel: 'Ringkasan Harian & Progres',
@@ -64,46 +34,60 @@ export const Sidebar = ({
       onClick: () => onSelectTab && onSelectTab('dashboard'),
     },
     {
+      id: 'productivity',
+      label: 'Produktivitas',
+      sublabel: 'Grafik Analisis & Metrik Belajar',
+      icon: TrendingUp,
+      onClick: () => onSelectTab && onSelectTab('productivity'),
+    },
+    {
       id: 'classes',
       label: 'Jadwal Kelas',
       sublabel: 'Jadwal Kuliah / Sekolah Rutin',
       icon: BookOpen,
-      onClick: () => onOpenClassModal && onOpenClassModal(),
+      onClick: () => onSelectTab && onSelectTab('classes'),
     },
     {
       id: 'tasks',
-      label: 'Tugas',
-      sublabel: 'Kelola & Tambah Agenda Tugas',
+      label: 'Daftar Tugas',
+      sublabel: 'Kelola & Agenda Tugas Belajar',
       icon: ClipboardList,
-      onClick: () => onOpenTaskModal && onOpenTaskModal(),
+      onClick: () => onSelectTab && onSelectTab('tasks'),
     },
     {
       id: 'notes',
-      label: 'Catatan',
-      sublabel: 'Catatan Belajar & Rumus Penting',
+      label: 'Catatan Belajar',
+      sublabel: 'Catatan Kuliah & Rumus Penting',
       icon: FileText,
-      onClick: () => onOpenNotesModal && onOpenNotesModal(),
+      onClick: () => onSelectTab && onSelectTab('notes'),
     },
     {
       id: 'plans',
-      label: 'Rencana',
+      label: 'Perencana Kalender',
       sublabel: 'Tampilan Mingguan & Bulanan',
       icon: ListTodo,
       onClick: () => onSelectTab && onSelectTab('plans'),
     },
     {
+      id: 'friends',
+      label: 'Teman Belajar',
+      sublabel: 'Jaringan & Kolaborasi Belajar',
+      icon: Users,
+      onClick: () => onSelectTab && onSelectTab('friends'),
+    },
+    {
       id: 'supabase',
       label: 'Supabase Cloud',
-      sublabel: 'Koneksi & Sinkronisasi Database',
+      sublabel: 'Koneksi & Sinkronisasi Realtime',
       icon: Database,
-      onClick: () => onOpenSupabaseModal && onOpenSupabaseModal(),
+      onClick: () => onSelectTab && onSelectTab('supabase'),
     },
     {
       id: 'settings',
       label: 'Pengaturan',
       sublabel: 'Preferensi Belajar & Akun',
       icon: Wrench,
-      onClick: () => onOpenSettingsModal && onOpenSettingsModal(),
+      onClick: () => onSelectTab && onSelectTab('settings'),
     },
   ];
 
@@ -291,7 +275,10 @@ export const Sidebar = ({
             cursor: 'pointer',
           }}
           title={user?.name ? `${user.name} (${user.major})` : 'Profil Akun'}
-          onClick={() => onOpenSettingsModal && onOpenSettingsModal()}
+          onClick={() => {
+            if (onSelectTab) onSelectTab('settings');
+            else if (onOpenSettingsModal) onOpenSettingsModal();
+          }}
         >
           {user?.name
             ? user.name

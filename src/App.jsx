@@ -4,8 +4,10 @@ import {
   getCurrentSession,
   getUserData,
   saveTask,
+  deleteTask,
   toggleTaskStatus,
   saveSchedule,
+  deleteSchedule,
   logoutUser,
   getStoredUsers,
   ensureDefaultUser,
@@ -21,12 +23,19 @@ import {
 import { isSupabaseConfigured } from './services/supabaseClient';
 import { requestNotificationPermission, triggerReminderAlert } from './services/notificationService';
 import { Sidebar } from './components/Sidebar';
-import { ProductivityPanel } from './components/ProductivityPanel';
 import { Navbar } from './components/Navbar';
 import { GreetingCard } from './components/GreetingCard';
 import { DailyView } from './components/Views/DailyView';
 import { WeeklyView } from './components/Views/WeeklyView';
 import { MonthlyView } from './components/Views/MonthlyView';
+import { ProductivityView } from './components/Views/ProductivityView';
+import { ClassesView } from './components/Views/ClassesView';
+import { TasksView } from './components/Views/TasksView';
+import { NotesView } from './components/Views/NotesView';
+import { PlansView } from './components/Views/PlansView';
+import { FriendsView } from './components/Views/FriendsView';
+import { SupabaseView } from './components/Views/SupabaseView';
+import { SettingsView } from './components/Views/SettingsView';
 import { AuthScreen } from './components/AuthScreen';
 import { TaskModal } from './components/TaskModal';
 import { ClassModal } from './components/ClassModal';
@@ -53,7 +62,6 @@ export function App() {
   // Active View & Tab State
   const [currentView, setCurrentView] = useState('daily'); // 'daily' | 'weekly' | 'monthly'
   const [activeSidebarTab, setActiveSidebarTab] = useState('dashboard');
-  const [isProdCollapsed, setIsProdCollapsed] = useState(false);
 
   // Modal States
   const [isTaskModalOpen, setIsTaskModalOpen] = useState(false);
@@ -181,6 +189,17 @@ export function App() {
     setEditingTask(null);
   };
 
+  const handleDeleteTask = (taskId) => {
+    if (!currentUser) return;
+    const updated = deleteTask(currentUser.id, taskId);
+    setTasks(updated);
+  };
+
+  const handleEditTask = (task) => {
+    setEditingTask(task);
+    setIsTaskModalOpen(true);
+  };
+
   const handleSelectTaskForAI = (task) => {
     setAiSelectedTask(task);
     setIsAIModalOpen(true);
@@ -210,6 +229,12 @@ export function App() {
     setSchedules(updated);
   };
 
+  const handleDeleteSchedule = (scheduleId) => {
+    if (!currentUser) return;
+    const updated = deleteSchedule(currentUser.id, scheduleId);
+    setSchedules(updated);
+  };
+
   // Friends Handlers
   const handleAddFriend = (friendData) => {
     if (!currentUser) return;
@@ -235,6 +260,23 @@ export function App() {
     }
   };
 
+  // Navigation handlers
+  const handleSelectTab = (tab) => {
+    setActiveSidebarTab(tab);
+    if (tab === 'dashboard') {
+      setCurrentView('daily');
+    }
+  };
+
+  const handleViewChange = (view) => {
+    setCurrentView(view);
+    if (view === 'daily') {
+      setActiveSidebarTab('dashboard');
+    } else {
+      setActiveSidebarTab('plans');
+    }
+  };
+
   // Fullscreen Interactive Auth Screen (100vh & 100vw)
   if (!currentUser || isAuthOpen) {
     return <AuthScreen isOpen={true} onAuthSuccess={handleAuthSuccess} />;
@@ -245,14 +287,7 @@ export function App() {
       {/* 1. Permanent Vertical Sidebar on Far Left (68px) */}
       <Sidebar
         activeTab={activeSidebarTab}
-        onSelectTab={(tab) => {
-          setActiveSidebarTab(tab);
-          if (tab === 'main' || tab === 'dashboard') {
-            setCurrentView('daily');
-          } else if (tab === 'plans') {
-            setCurrentView('weekly');
-          }
-        }}
+        onSelectTab={handleSelectTab}
         onOpenClassModal={() => setIsClassModalOpen(true)}
         onOpenTaskModal={() => {
           setEditingTask(null);
@@ -264,31 +299,21 @@ export function App() {
         user={currentUser}
       />
 
-      {/* 2. Productivity Widget / Panel on Left (Next to Sidebar) */}
-      <ProductivityPanel
-        completedTasksCount={tasks.filter((t) => t.isCompleted).length}
-        totalTasksCount={tasks.length}
-        user={currentUser}
-        isCollapsed={isProdCollapsed}
-        onToggleCollapse={() => setIsProdCollapsed(!isProdCollapsed)}
-      />
-
-      {/* 3. Main Content Area next to Productivity Panel */}
+      {/* 2. Main Content Area (Spans full width from 68px) */}
       <div
         style={{
           flex: 1,
-          marginLeft: isProdCollapsed ? '92px' : '308px',
+          marginLeft: '68px',
           display: 'flex',
           flexDirection: 'column',
           minWidth: 0,
-          transition: 'margin-left 240ms cubic-bezier(0.4, 0, 0.2, 1)',
         }}
       >
         {/* Top Header spanning from sidebar to right with CodeStack Schedule Logo */}
         <Navbar
           user={currentUser}
           currentView={currentView}
-          onViewChange={setCurrentView}
+          onViewChange={handleViewChange}
           onOpenTaskModal={() => {
             setEditingTask(null);
             setIsTaskModalOpen(true);
@@ -314,15 +339,79 @@ export function App() {
             padding: '24px 28px',
           }}
         >
-          {/* Full-width Greeting Card */}
-          <GreetingCard user={currentUser} schedules={schedules} />
+          {/* Conditional View Rendering based on activeSidebarTab */}
+          {activeSidebarTab === 'dashboard' && (
+            <>
+              <GreetingCard user={currentUser} schedules={schedules} />
+              <DailyView
+                tasks={tasks}
+                schedules={schedules}
+                friends={friends}
+                onToggleTask={handleToggleTask}
+                onOpenTaskModal={() => {
+                  setEditingTask(null);
+                  setIsTaskModalOpen(true);
+                }}
+                onOpenClassModal={() => setIsClassModalOpen(true)}
+                onSelectTaskForAI={handleSelectTaskForAI}
+                onOpenAIRecommender={() => {
+                  setAiSelectedTask(null);
+                  setIsAIModalOpen(true);
+                }}
+                onAddFriend={handleAddFriend}
+                userName={currentUser.name}
+              />
+            </>
+          )}
 
-          {/* View Output */}
-          {currentView === 'daily' && (
-            <DailyView
+          {activeSidebarTab === 'productivity' && (
+            <ProductivityView
               tasks={tasks}
               schedules={schedules}
-              friends={friends}
+              user={currentUser}
+              onToggleTask={handleToggleTask}
+              onOpenTaskModal={() => {
+                setEditingTask(null);
+                setIsTaskModalOpen(true);
+              }}
+            />
+          )}
+
+          {activeSidebarTab === 'classes' && (
+            <ClassesView
+              schedules={schedules}
+              onOpenClassModal={() => setIsClassModalOpen(true)}
+              onDeleteSchedule={handleDeleteSchedule}
+              user={currentUser}
+            />
+          )}
+
+          {activeSidebarTab === 'tasks' && (
+            <TasksView
+              tasks={tasks}
+              courses={courses}
+              onToggleTask={handleToggleTask}
+              onDeleteTask={handleDeleteTask}
+              onOpenTaskModal={() => {
+                setEditingTask(null);
+                setIsTaskModalOpen(true);
+              }}
+              onEditTask={handleEditTask}
+              onSelectTaskForAI={handleSelectTaskForAI}
+            />
+          )}
+
+          {activeSidebarTab === 'notes' && (
+            <NotesView
+              notes={notes}
+              onSaveNotes={handleSaveNotes}
+            />
+          )}
+
+          {activeSidebarTab === 'plans' && (
+            <PlansView
+              tasks={tasks}
+              schedules={schedules}
               onToggleTask={handleToggleTask}
               onOpenTaskModal={() => {
                 setEditingTask(null);
@@ -330,37 +419,39 @@ export function App() {
               }}
               onOpenClassModal={() => setIsClassModalOpen(true)}
               onSelectTaskForAI={handleSelectTaskForAI}
-              onOpenAIRecommender={() => {
-                setAiSelectedTask(null);
-                setIsAIModalOpen(true);
-              }}
+              mode={currentView === 'monthly' ? 'monthly' : 'weekly'}
+              onModeChange={setCurrentView}
+            />
+          )}
+
+          {activeSidebarTab === 'friends' && (
+            <FriendsView
+              friends={friends}
               onAddFriend={handleAddFriend}
-              userName={currentUser.name}
+              currentUser={currentUser}
             />
           )}
 
-          {currentView === 'weekly' && (
-            <WeeklyView
+          {activeSidebarTab === 'supabase' && (
+            <SupabaseView
+              user={currentUser}
               tasks={tasks}
               schedules={schedules}
-              onToggleTask={handleToggleTask}
-              onOpenTaskModal={() => {
-                setEditingTask(null);
-                setIsTaskModalOpen(true);
+              friends={friends}
+              notes={notes}
+              onDataSynced={() => {
+                if (currentUser) loadUserData(currentUser);
               }}
-              onSelectTaskForAI={handleSelectTaskForAI}
+              onOpenConfigModal={() => setIsSupabaseModalOpen(true)}
             />
           )}
 
-          {currentView === 'monthly' && (
-            <MonthlyView
-              tasks={tasks}
-              schedules={schedules}
-              onToggleTask={handleToggleTask}
-              onOpenTaskModal={() => {
-                setEditingTask(null);
-                setIsTaskModalOpen(true);
-              }}
+          {activeSidebarTab === 'settings' && (
+            <SettingsView
+              user={currentUser}
+              onUpdateUser={handleUpdateUser}
+              onOpenSupabaseModal={() => setIsSupabaseModalOpen(true)}
+              onLogout={handleLogout}
             />
           )}
         </main>
