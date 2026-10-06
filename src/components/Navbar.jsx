@@ -12,6 +12,7 @@ import {
   ExternalLink,
   Plus,
   Database,
+  RotateCw,
 } from 'lucide-react';
 
 import { ICTLogo } from './ICTLogo';
@@ -27,6 +28,8 @@ export const Navbar = ({
   onOpenAIRecommender,
   onOpenSupabaseModal,
   onLogout,
+  onRefreshTab,
+  isRefreshing = false,
   reminders = [],
 }) => {
   const [isOnline, setIsOnline] = useState(navigator.onLine);
@@ -186,6 +189,37 @@ export const Navbar = ({
             <Database size={13} />
             <span>{isSupabaseConfigured() ? 'Supabase Sync 🟢' : 'Supabase Setup ⚡'}</span>
           </button>
+
+          {/* Refresh Current Tab Button */}
+          {onRefreshTab && (
+            <button
+              type="button"
+              onClick={onRefreshTab}
+              className="btn-ghost"
+              style={{
+                padding: '5px 10px',
+                borderRadius: 'var(--radius-sm)',
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '6px',
+                fontSize: '0.78rem',
+                color: isRefreshing ? 'var(--pastel-lavender-text)' : 'var(--text-muted)',
+                border: '1px solid var(--border-subtle)',
+                background: '#FFFFFF',
+                cursor: 'pointer',
+                transition: 'all var(--transition-fast)',
+              }}
+              title="Segarkan data & tampilkan animasi tab saat ini"
+            >
+              <RotateCw
+                size={13}
+                className={isRefreshing ? 'refresh-spin-active' : ''}
+              />
+              <span style={{ fontWeight: 500 }}>
+                {isRefreshing ? 'Menyegarkan...' : 'Segarkan'}
+              </span>
+            </button>
+          )}
 
           {/* Cloud Sync Status Pill */}
           <div

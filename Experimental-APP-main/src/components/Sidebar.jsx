@@ -182,6 +182,7 @@ export const Sidebar = ({
                 {/* Active Indicator Bar on left */}
                 {isActive && !item.isCustomYellow && (
                   <span
+                    className="sidebar-active-pill"
                     style={{
                       position: 'absolute',
                       left: '-12px',

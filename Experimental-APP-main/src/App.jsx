@@ -46,6 +46,45 @@ import { NotesModal } from './components/NotesModal';
 import { SettingsModal } from './components/SettingsModal';
 import { SupabaseModal } from './components/SupabaseModal';
 
+const VALID_TABS = [
+  'dashboard',
+  'productivity',
+  'classes',
+  'tasks',
+  'notes',
+  'plans',
+  'friends',
+  'supabase',
+  'settings',
+];
+
+const getInitialTab = () => {
+  try {
+    const hash = window.location.hash.replace(/^#\/?/, '').trim().toLowerCase();
+    if (VALID_TABS.includes(hash)) {
+      return hash;
+    }
+    const stored = localStorage.getItem('studycal_active_tab_v1');
+    if (stored && VALID_TABS.includes(stored)) {
+      return stored;
+    }
+  } catch (err) {
+    console.warn('Tab initial state read warning:', err);
+  }
+  return 'dashboard';
+};
+
+const getInitialView = (initialTab) => {
+  if (initialTab === 'plans') {
+    try {
+      const stored = localStorage.getItem('studycal_current_view_v1');
+      if (stored === 'monthly' || stored === 'weekly') return stored;
+    } catch {}
+    return 'weekly';
+  }
+  return 'daily';
+};
+
 export function App() {
   // Synchronous session check prevents 1-second login screen flash on page refresh!
   const [currentUser, setCurrentUser] = useState(() => {
@@ -99,9 +138,11 @@ export function App() {
     return [];
   });
 
-  // Active View & Tab State
-  const [currentView, setCurrentView] = useState('daily'); // 'daily' | 'weekly' | 'monthly'
-  const [activeSidebarTab, setActiveSidebarTab] = useState('dashboard');
+  // Active View & Tab State (Persisted across refreshes via hash & localStorage)
+  const [activeSidebarTab, setActiveSidebarTab] = useState(getInitialTab);
+  const [currentView, setCurrentView] = useState(() => getInitialView(activeSidebarTab));
+  const [refreshKey, setRefreshKey] = useState(0);
+  const [isRefreshing, setIsRefreshing] = useState(false);
 
   // Modal States
   const [isTaskModalOpen, setIsTaskModalOpen] = useState(false);
@@ -215,6 +256,12 @@ export function App() {
     setFriends([]);
     setNotes([]);
     setIsAuthOpen(true);
+    try {
+      localStorage.removeItem('studycal_active_tab_v1');
+      localStorage.removeItem('studycal_current_view_v1');
+      window.history.replaceState(null, '', '#dashboard');
+    } catch (e) {}
+    setActiveSidebarTab('dashboard');
   };
 
   // Task Handlers
@@ -308,22 +355,90 @@ export function App() {
     }
   };
 
-  // Navigation handlers
+  // Navigation handlers with persistence and animation trigger
   const handleSelectTab = (tab) => {
+    if (!VALID_TABS.includes(tab)) return;
     setActiveSidebarTab(tab);
+    setRefreshKey((prev) => prev + 1);
+
+    try {
+      localStorage.setItem('studycal_active_tab_v1', tab);
+      const currentHash = window.location.hash.replace(/^#\/?/, '').trim().toLowerCase();
+      if (currentHash !== tab) {
+        window.history.replaceState(null, '', `#${tab}`);
+      }
+    } catch (e) {}
+
     if (tab === 'dashboard') {
       setCurrentView('daily');
+    } else if (tab === 'plans' && currentView === 'daily') {
+      setCurrentView('weekly');
     }
   };
 
   const handleViewChange = (view) => {
     setCurrentView(view);
+    try {
+      localStorage.setItem('studycal_current_view_v1', view);
+    } catch (e) {}
+
     if (view === 'daily') {
-      setActiveSidebarTab('dashboard');
+      handleSelectTab('dashboard');
     } else {
-      setActiveSidebarTab('plans');
+      handleSelectTab('plans');
     }
   };
+
+  const handleManualRefresh = async () => {
+    setIsRefreshing(true);
+    setRefreshKey((prev) => prev + 1);
+
+    try {
+      if (currentUser?.id) {
+        const cloudData = await fetchCloudUserData(currentUser.id);
+        if (cloudData) {
+          if (cloudData.tasks && cloudData.tasks.length > 0) setTasks(cloudData.tasks);
+          if (cloudData.schedules && cloudData.schedules.length > 0) setSchedules(cloudData.schedules);
+          if (cloudData.courses && cloudData.courses.length > 0) setCourses(cloudData.courses);
+          if (cloudData.friends && cloudData.friends.length > 0) setFriends(cloudData.friends);
+          if (cloudData.notes && cloudData.notes.length > 0) setNotes(cloudData.notes);
+        } else {
+          loadUserData(currentUser);
+        }
+      }
+    } catch (err) {
+      console.warn('Manual refresh warning:', err);
+    }
+
+    setTimeout(() => {
+      setIsRefreshing(false);
+    }, 600);
+  };
+
+  // Synchronize URL hash with active tab & support browser back/forward buttons
+  useEffect(() => {
+    try {
+      const currentHash = window.location.hash.replace(/^#\/?/, '').trim().toLowerCase();
+      if (!currentHash || currentHash !== activeSidebarTab) {
+        window.history.replaceState(null, '', `#${activeSidebarTab}`);
+      }
+      localStorage.setItem('studycal_active_tab_v1', activeSidebarTab);
+    } catch (e) {}
+
+    const handleHashChange = () => {
+      const hash = window.location.hash.replace(/^#\/?/, '').trim().toLowerCase();
+      if (VALID_TABS.includes(hash) && hash !== activeSidebarTab) {
+        setActiveSidebarTab(hash);
+        setRefreshKey((prev) => prev + 1);
+        try {
+          localStorage.setItem('studycal_active_tab_v1', hash);
+        } catch (e) {}
+      }
+    };
+
+    window.addEventListener('hashchange', handleHashChange);
+    return () => window.removeEventListener('hashchange', handleHashChange);
+  }, [activeSidebarTab]);
 
   // Fullscreen Interactive Auth Screen (100vh & 100vw)
   if (!currentUser || isAuthOpen) {
@@ -374,8 +489,13 @@ export function App() {
           }}
           onOpenSupabaseModal={() => setIsSupabaseModalOpen(true)}
           onLogout={handleLogout}
+          onRefreshTab={handleManualRefresh}
+          isRefreshing={isRefreshing}
           reminders={reminders}
         />
+
+        {/* Top Loading Accent Bar on refresh or tab switch */}
+        <div key={`loader-${activeSidebarTab}-${refreshKey}`} className="tab-refresh-bar" />
 
         {/* Content Container */}
         <main
@@ -387,8 +507,13 @@ export function App() {
             padding: '24px 28px',
           }}
         >
-          {/* Conditional View Rendering based on activeSidebarTab */}
-          {activeSidebarTab === 'dashboard' && (
+          {/* Animated Tab Content Container */}
+          <div
+            key={`${activeSidebarTab}-${refreshKey}`}
+            className="tab-view-container"
+          >
+            {/* Conditional View Rendering based on activeSidebarTab */}
+            {activeSidebarTab === 'dashboard' && (
             <>
               <GreetingCard user={currentUser} schedules={schedules} />
               <DailyView
@@ -505,6 +630,7 @@ export function App() {
               onLogout={handleLogout}
             />
           )}
+          </div>
         </main>
       </div>
 
