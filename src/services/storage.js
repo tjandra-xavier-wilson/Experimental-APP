@@ -105,7 +105,7 @@ export const CANONICAL_USER_ID = 'user-tjandra-wilson-live';
 
 export const taskToSupabase = (task, userId) => ({
   id: task.id || generateId('tsk'),
-  user_id: userId || task.userId || CANONICAL_USER_ID,
+  user_id: CANONICAL_USER_ID,
   title: task.title || '',
   course_id: task.courseId || null,
   course_name: task.courseName || null,
@@ -156,7 +156,7 @@ export const taskFromSupabase = (row) => ({
 
 export const scheduleToSupabase = (sch, userId) => ({
   id: sch.id || generateId('sch'),
-  user_id: userId || sch.userId || CANONICAL_USER_ID,
+  user_id: CANONICAL_USER_ID,
   course_id: sch.courseId || null,
   course_name: sch.courseName || sch.name || 'Jadwal Kuliah',
   day_of_week: Number(sch.dayOfWeek) || 1,
@@ -185,7 +185,7 @@ export const scheduleFromSupabase = (row) => ({
 
 export const courseToSupabase = (crs, userId) => ({
   id: crs.id || generateId('crs'),
-  user_id: userId || crs.userId || CANONICAL_USER_ID,
+  user_id: CANONICAL_USER_ID,
   name: crs.name || '',
   code: crs.code || '',
   lecturer: crs.lecturer || '',
@@ -208,7 +208,7 @@ export const courseFromSupabase = (row) => ({
 
 export const friendToSupabase = (frd, userId) => ({
   id: frd.id || generateId('frd'),
-  user_id: userId || frd.userId || CANONICAL_USER_ID,
+  user_id: CANONICAL_USER_ID,
   name: frd.name || '',
   initials: frd.initials || 'FR',
   avatar_bg: frd.avatarBg || '#8E94F2',
@@ -239,7 +239,7 @@ export const friendFromSupabase = (row) => ({
 
 export const noteToSupabase = (note, userId) => ({
   id: note.id || generateId('not'),
-  user_id: userId || note.userId || CANONICAL_USER_ID,
+  user_id: CANONICAL_USER_ID,
   title: note.title || '',
   content: note.content || '',
   date: note.date || new Date().toLocaleDateString('id-ID'),
@@ -261,7 +261,7 @@ export const noteFromSupabase = (row) => ({
 // ==========================================
 
 export const fetchCloudUserData = async (userId) => {
-  if (!userId) return null;
+  const targetUserId = CANONICAL_USER_ID;
   try {
     const [
       { data: tasksData, error: tasksErr },
@@ -273,15 +273,15 @@ export const fetchCloudUserData = async (userId) => {
       supabase
         .from('tasks')
         .select('*')
-        .eq('user_id', userId)
+        .eq('user_id', targetUserId)
         .order('created_at', { ascending: false }),
-      supabase.from('schedules').select('*').eq('user_id', userId),
-      supabase.from('courses').select('*').eq('user_id', userId),
-      supabase.from('friends').select('*').eq('user_id', userId),
+      supabase.from('schedules').select('*').eq('user_id', targetUserId),
+      supabase.from('courses').select('*').eq('user_id', targetUserId),
+      supabase.from('friends').select('*').eq('user_id', targetUserId),
       supabase
         .from('notes')
         .select('*')
-        .eq('user_id', userId)
+        .eq('user_id', targetUserId)
         .order('created_at', { ascending: false }),
     ]);
 
@@ -298,7 +298,7 @@ export const fetchCloudUserData = async (userId) => {
     const mappedNotes = (noteData || []).map(noteFromSupabase);
 
     // Update local cache with Smart Bidirectional Merge (cloud + local)
-    const currentLocal = getUserData(userId) || {};
+    const currentLocal = getUserData(targetUserId) || (userId ? getUserData(userId) : {}) || {};
 
     const mergeById = (cloudList, localList, syncFn) => {
       const map = new Map();
@@ -306,8 +306,8 @@ export const fetchCloudUserData = async (userId) => {
       (localList || []).forEach((item) => {
         if (!map.has(item.id)) {
           map.set(item.id, item);
-          if (syncFn && isSupabaseConfigured() && userId) {
-            syncFn(userId, item).catch(() => {});
+          if (syncFn && isSupabaseConfigured()) {
+            syncFn(targetUserId, item).catch(() => {});
           }
         }
       });
@@ -328,7 +328,10 @@ export const fetchCloudUserData = async (userId) => {
       friends: finalFriends,
       notes: finalNotes,
     };
-    saveUserData(userId, updatedBundle);
+    saveUserData(targetUserId, updatedBundle);
+    if (userId && userId !== targetUserId) {
+      saveUserData(userId, updatedBundle);
+    }
 
     return {
       tasks: finalTasks,
@@ -348,15 +351,15 @@ export const pullDataFromSupabase = async (userId) => {
 };
 
 export const subscribeToCloudChanges = (userId, onTasksChange) => {
-  if (!userId) return () => {};
+  const targetUserId = CANONICAL_USER_ID;
   try {
     const channel = supabase
-      .channel(`rt-tasks-${userId}`)
+      .channel(`rt-tasks-shared`)
       .on(
         'postgres_changes',
-        { event: '*', schema: 'public', table: 'tasks', filter: `user_id=eq.${userId}` },
+        { event: '*', schema: 'public', table: 'tasks', filter: `user_id=eq.${targetUserId}` },
         async () => {
-          const fresh = await fetchCloudUserData(userId);
+          const fresh = await fetchCloudUserData(targetUserId);
           if (fresh && fresh.tasks && onTasksChange) {
             onTasksChange(fresh.tasks);
           }
@@ -414,10 +417,8 @@ export const registerUser = ({
   const defaultSemester = isSMA ? 'Kelas 11' : 'Semester 4';
   const defaultSchool = isSMA ? 'Mutiara Bangsa 2 School' : 'Universitas Indonesia';
 
-  // Use CANONICAL_USER_ID if it matches Tjandra Wilson or if ID is provided
-  const isDefaultProfile =
-    email.trim().toLowerCase() === 'tjandrawilson@mutiarabangsa.sch.id';
-  const userId = id || (isDefaultProfile ? CANONICAL_USER_ID : generateId('user'));
+  // Use CANONICAL_USER_ID so all devices (Laptop & HP) share the same cloud database
+  const userId = CANONICAL_USER_ID;
 
   const newUser = {
     id: userId,
@@ -455,7 +456,7 @@ export const loginUser = (email, password, rememberMe = true) => {
   );
 
   // If logging in as default user and not yet in localStorage, create it
-  if (!user && email.trim().toLowerCase() === 'tjandrawilson@mutiarabangsa.sch.id') {
+  if (!user && (email.trim().toLowerCase() === 'tjandrawilson@mutiarabangsa.sch.id' || users.length === 0)) {
     user = ensureDefaultUser();
   }
 
@@ -469,11 +470,11 @@ export const loginUser = (email, password, rememberMe = true) => {
 
 export const ensureDefaultUser = () => {
   const users = getStoredUsers();
-  const existing = users.find(
+  let existing = users.find(
     (u) =>
       u.id === CANONICAL_USER_ID ||
       u.email?.toLowerCase() === 'tjandrawilson@mutiarabangsa.sch.id'
-  );
+  ) || users[0];
 
   if (existing) {
     if (existing.id !== CANONICAL_USER_ID) {
@@ -502,7 +503,7 @@ export const ensureDefaultUser = () => {
 
 export const setSession = (user, rememberMe = true) => {
   const sessionData = {
-    userId: user.id,
+    userId: CANONICAL_USER_ID,
     loggedAt: new Date().toISOString(),
   };
 
@@ -521,19 +522,39 @@ export const getCurrentSession = () => {
     if (remRaw) {
       const parsed = JSON.parse(remRaw);
       const users = getStoredUsers();
-      const user = users.find((u) => u.id === parsed.userId);
-      if (user) return { user, rememberMe: true };
+      let user = users.find((u) => u.id === parsed.userId) || users[0];
+      if (user) {
+        if (user.id !== CANONICAL_USER_ID) {
+          user = { ...user, id: CANONICAL_USER_ID };
+          safeLocalStorage.setItem(
+            STORAGE_KEYS.REMEMBER,
+            JSON.stringify({ userId: CANONICAL_USER_ID, loggedAt: new Date().toISOString() })
+          );
+        }
+        return { user, rememberMe: true };
+      }
     }
 
     const sessRaw = safeSessionStorage.getItem(STORAGE_KEYS.SESSION);
     if (sessRaw) {
       const parsed = JSON.parse(sessRaw);
       const users = getStoredUsers();
-      const user = users.find((u) => u.id === parsed.userId);
-      if (user) return { user, rememberMe: false };
+      let user = users.find((u) => u.id === parsed.userId) || users[0];
+      if (user) {
+        if (user.id !== CANONICAL_USER_ID) {
+          user = { ...user, id: CANONICAL_USER_ID };
+          safeSessionStorage.setItem(
+            STORAGE_KEYS.SESSION,
+            JSON.stringify({ userId: CANONICAL_USER_ID, loggedAt: new Date().toISOString() })
+          );
+        }
+        return { user, rememberMe: false };
+      }
     }
 
-    return null;
+    // Default auto-login to canonical user on new devices (e.g. mobile HP)
+    const defaultUser = ensureDefaultUser();
+    return { user: defaultUser, rememberMe: true };
   } catch (e) {
     console.error('Session check error:', e);
     return null;
@@ -587,14 +608,15 @@ export const getTasks = (userId) => {
 };
 
 export const saveTask = (userId, task) => {
-  const data = getUserData(userId) || { tasks: [] };
+  const targetId = CANONICAL_USER_ID;
+  const data = getUserData(targetId) || (userId ? getUserData(userId) : null) || { tasks: [] };
   if (!data.tasks) data.tasks = [];
 
   const taskId = task.id || generateId('tsk');
   const fullTask = {
     ...task,
     id: taskId,
-    userId: userId || CANONICAL_USER_ID,
+    userId: targetId,
     createdAt: task.createdAt || new Date().toISOString(),
   };
 
@@ -604,11 +626,14 @@ export const saveTask = (userId, task) => {
   } else {
     data.tasks.unshift(fullTask);
   }
-  saveUserData(userId, data);
+  saveUserData(targetId, data);
+  if (userId && userId !== targetId) {
+    saveUserData(userId, data);
+  }
 
   // Background sync to Supabase
-  if (isSupabaseConfigured() && userId) {
-    syncTaskToSupabase(userId, fullTask).catch((e) =>
+  if (isSupabaseConfigured()) {
+    syncTaskToSupabase(targetId, fullTask).catch((e) =>
       console.warn('Supabase save task sync warning:', e)
     );
   }
@@ -617,10 +642,14 @@ export const saveTask = (userId, task) => {
 };
 
 export const deleteTask = (userId, taskId) => {
-  const data = getUserData(userId);
+  const targetId = CANONICAL_USER_ID;
+  const data = getUserData(targetId) || (userId ? getUserData(userId) : null);
   if (data && data.tasks) {
     data.tasks = data.tasks.filter((t) => t.id !== taskId);
-    saveUserData(userId, data);
+    saveUserData(targetId, data);
+    if (userId && userId !== targetId) {
+      saveUserData(userId, data);
+    }
   }
 
   // Background sync to Supabase
@@ -634,7 +663,8 @@ export const deleteTask = (userId, taskId) => {
 };
 
 export const toggleTaskStatus = (userId, taskId) => {
-  const data = getUserData(userId);
+  const targetId = CANONICAL_USER_ID;
+  const data = getUserData(targetId) || (userId ? getUserData(userId) : null);
   if (!data || !data.tasks) return [];
 
   let targetTask = null;
@@ -651,11 +681,14 @@ export const toggleTaskStatus = (userId, taskId) => {
     }
     return t;
   });
-  saveUserData(userId, data);
+  saveUserData(targetId, data);
+  if (userId && userId !== targetId) {
+    saveUserData(userId, data);
+  }
 
   // Background sync to Supabase
-  if (isSupabaseConfigured() && userId && targetTask) {
-    syncTaskToSupabase(userId, targetTask).catch((e) =>
+  if (isSupabaseConfigured() && targetTask) {
+    syncTaskToSupabase(targetId, targetTask).catch((e) =>
       console.warn('Supabase toggle task sync warning:', e)
     );
   }

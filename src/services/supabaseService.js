@@ -242,13 +242,15 @@ export const fetchAllUserDataFromSupabase = async (userId) => {
  * ==========================================================
  */
 
+const CANONICAL_USER_ID = 'user-tjandra-wilson-live';
+
 export const syncTaskToSupabase = async (userId, task) => {
   const client = getSupabase();
-  if (!client || !userId || !task) return;
+  if (!client || !task) return;
 
   const payload = {
     id: task.id,
-    user_id: userId,
+    user_id: CANONICAL_USER_ID,
     title: task.title,
     course_id: task.courseId || null,
     course_name: task.courseName || '',
@@ -280,11 +282,11 @@ export const deleteTaskFromSupabase = async (taskId) => {
 
 export const syncScheduleToSupabase = async (userId, schedule) => {
   const client = getSupabase();
-  if (!client || !userId || !schedule) return;
+  if (!client || !schedule) return;
 
   const payload = {
     id: schedule.id,
-    user_id: userId,
+    user_id: CANONICAL_USER_ID,
     course_id: schedule.courseId || null,
     course_name: schedule.courseName || '',
     day_of_week: Number(schedule.dayOfWeek),
@@ -309,11 +311,11 @@ export const deleteScheduleFromSupabase = async (scheduleId) => {
 
 export const syncCourseToSupabase = async (userId, course) => {
   const client = getSupabase();
-  if (!client || !userId || !course) return;
+  if (!client || !course) return;
 
   const payload = {
     id: course.id,
-    user_id: userId,
+    user_id: CANONICAL_USER_ID,
     name: course.name,
     code: course.code || '',
     lecturer: course.lecturer || '',
@@ -328,13 +330,12 @@ export const syncCourseToSupabase = async (userId, course) => {
 
 export const syncFriendsToSupabase = async (userId, friends) => {
   const client = getSupabase();
-  if (!client || !userId || !Array.isArray(friends)) return;
+  if (!client || !Array.isArray(friends)) return;
 
-  // Clear and rewrite friends or upsert each
   for (const f of friends) {
     const payload = {
       id: f.id,
-      user_id: userId,
+      user_id: CANONICAL_USER_ID,
       name: f.name,
       initials: f.initials || 'FR',
       avatar_bg: f.avatarBg || '#8E94F2',
@@ -352,12 +353,12 @@ export const syncFriendsToSupabase = async (userId, friends) => {
 
 export const syncNotesToSupabase = async (userId, notes) => {
   const client = getSupabase();
-  if (!client || !userId || !Array.isArray(notes)) return;
+  if (!client || !Array.isArray(notes)) return;
 
   for (const n of notes) {
     const payload = {
       id: n.id,
-      user_id: userId,
+      user_id: CANONICAL_USER_ID,
       title: n.title || '',
       content: n.content || '',
       date: n.date || new Date().toISOString(),
