@@ -405,6 +405,8 @@ export function App() {
             <NotesView
               notes={notes}
               onSaveNotes={handleSaveNotes}
+              onOpenNotesModal={() => setIsNotesModalOpen(true)}
+              user={currentUser}
             />
           )}
 
@@ -503,6 +505,7 @@ export function App() {
         onClose={() => setIsNotesModalOpen(false)}
         notes={notes}
         onSaveNotes={handleSaveNotes}
+        user={currentUser}
       />
 
       <SettingsModal
