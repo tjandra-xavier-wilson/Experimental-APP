@@ -15,6 +15,7 @@ import {
   addFriend,
   getNotes,
   saveNotes,
+  deleteNote,
   saveUsers,
   fetchCloudUserData,
   pullDataFromSupabase,
@@ -46,18 +47,57 @@ import { SettingsModal } from './components/SettingsModal';
 import { SupabaseModal } from './components/SupabaseModal';
 
 export function App() {
-  // Session & User State
-  const [currentUser, setCurrentUser] = useState(null);
+  // Synchronous session check prevents 1-second login screen flash on page refresh!
+  const [currentUser, setCurrentUser] = useState(() => {
+    try {
+      const session = getCurrentSession();
+      return session?.user || null;
+    } catch {
+      return null;
+    }
+  });
   const [isAuthOpen, setIsAuthOpen] = useState(false);
 
-  // App Data State (Empty default tasks & friends as requested)
-  const [tasks, setTasks] = useState([]);
-  const [schedules, setSchedules] = useState([]);
+  // App Data State (Synchronously pre-loaded for active session to prevent layout shifts)
+  const [tasks, setTasks] = useState(() => {
+    try {
+      const session = getCurrentSession();
+      if (session?.user?.id) {
+        return getUserData(session.user.id)?.tasks || [];
+      }
+    } catch {}
+    return [];
+  });
+  const [schedules, setSchedules] = useState(() => {
+    try {
+      const session = getCurrentSession();
+      if (session?.user?.id) {
+        return getUserData(session.user.id)?.schedules || [];
+      }
+    } catch {}
+    return [];
+  });
   const [courses, setCourses] = useState([]);
   const [categories, setCategories] = useState([]);
   const [reminders, setReminders] = useState([]);
-  const [friends, setFriends] = useState([]);
-  const [notes, setNotes] = useState([]);
+  const [friends, setFriends] = useState(() => {
+    try {
+      const session = getCurrentSession();
+      if (session?.user?.id) {
+        return getFriends(session.user.id) || [];
+      }
+    } catch {}
+    return [];
+  });
+  const [notes, setNotes] = useState(() => {
+    try {
+      const session = getCurrentSession();
+      if (session?.user?.id) {
+        return getNotes(session.user.id) || [];
+      }
+    } catch {}
+    return [];
+  });
 
   // Active View & Tab State
   const [currentView, setCurrentView] = useState('daily'); // 'daily' | 'weekly' | 'monthly'
@@ -172,6 +212,8 @@ export function App() {
     setCurrentUser(null);
     setTasks([]);
     setSchedules([]);
+    setFriends([]);
+    setNotes([]);
     setIsAuthOpen(true);
   };
 
@@ -247,6 +289,12 @@ export function App() {
     if (!currentUser) return;
     saveNotes(currentUser.id, updatedNotes);
     setNotes(updatedNotes);
+  };
+
+  const handleDeleteNote = (noteId) => {
+    if (!currentUser) return;
+    const updated = deleteNote(currentUser.id, noteId);
+    setNotes(updated);
   };
 
   // User Profile Update
@@ -405,6 +453,7 @@ export function App() {
             <NotesView
               notes={notes}
               onSaveNotes={handleSaveNotes}
+              onDeleteNote={handleDeleteNote}
               onOpenNotesModal={() => setIsNotesModalOpen(true)}
               user={currentUser}
             />
@@ -505,6 +554,7 @@ export function App() {
         onClose={() => setIsNotesModalOpen(false)}
         notes={notes}
         onSaveNotes={handleSaveNotes}
+        onDeleteNote={handleDeleteNote}
         user={currentUser}
       />
 

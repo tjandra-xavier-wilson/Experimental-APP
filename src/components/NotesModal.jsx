@@ -5,7 +5,7 @@ import { triggerReminderAlert } from '../services/notificationService';
 import { ConfirmDeleteModal } from './ConfirmDeleteModal';
 import { exportNoteToGoogleDocs, getGoogleDocsCreateUrl } from '../services/googleDocsService';
 
-export const NotesModal = ({ isOpen, onClose, notes = [], onSaveNotes, user }) => {
+export const NotesModal = ({ isOpen, onClose, notes = [], onSaveNotes, onDeleteNote, user }) => {
   const [newTitle, setNewTitle] = useState('');
   const [newContent, setNewContent] = useState('');
   const [newDocUrl, setNewDocUrl] = useState('');
@@ -18,11 +18,15 @@ export const NotesModal = ({ isOpen, onClose, notes = [], onSaveNotes, user }) =
     e.preventDefault();
     if (!newTitle.trim() || !newContent.trim()) return;
 
+    const formattedDocUrl = newDocUrl.trim()
+      ? (newDocUrl.trim().startsWith('http') ? newDocUrl.trim() : `https://${newDocUrl.trim()}`)
+      : null;
+
     const note = {
       id: `note-${Date.now()}`,
       title: newTitle.trim(),
       content: newContent.trim(),
-      googleDocUrl: newDocUrl.trim() || null,
+      googleDocUrl: formattedDocUrl,
       date: new Date().toLocaleDateString('id-ID', { day: 'numeric', month: 'short', year: 'numeric' }),
     };
 
@@ -35,7 +39,11 @@ export const NotesModal = ({ isOpen, onClose, notes = [], onSaveNotes, user }) =
 
   const handleConfirmDelete = () => {
     if (noteToDelete) {
-      onSaveNotes(notes.filter((n) => n.id !== noteToDelete.id));
+      if (onDeleteNote) {
+        onDeleteNote(noteToDelete.id);
+      } else {
+        onSaveNotes(notes.filter((n) => n.id !== noteToDelete.id));
+      }
       setNoteToDelete(null);
     }
   };
@@ -44,6 +52,15 @@ export const NotesModal = ({ isOpen, onClose, notes = [], onSaveNotes, user }) =
     navigator.clipboard.writeText(`${note.title}\n\n${note.content}`);
     setCopiedId(note.id);
     setTimeout(() => setCopiedId(null), 2000);
+  };
+
+  const handleOpenDoc = (note) => {
+    if (note.googleDocUrl) {
+      const url = note.googleDocUrl.startsWith('http') ? note.googleDocUrl : `https://${note.googleDocUrl}`;
+      window.open(url, '_blank', 'noopener,noreferrer');
+    } else {
+      exportNoteToGoogleDocs(note, user?.email);
+    }
   };
 
   return (
@@ -95,7 +112,7 @@ export const NotesModal = ({ isOpen, onClose, notes = [], onSaveNotes, user }) =
             />
             <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
               <input
-                type="url"
+                type="text"
                 placeholder="Tautan Google Docs (opsional: https://docs.google.com/...)"
                 value={newDocUrl}
                 onChange={(e) => setNewDocUrl(e.target.value)}
@@ -166,22 +183,25 @@ export const NotesModal = ({ isOpen, onClose, notes = [], onSaveNotes, user }) =
                     <h4 style={{ fontSize: '0.9rem', fontWeight: 700, margin: 0 }}>{note.title}</h4>
                     <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>• {note.date}</span>
                     {note.googleDocUrl && (
-                      <a
-                        href={note.googleDocUrl}
-                        target="_blank"
-                        rel="noopener noreferrer"
+                      <button
+                        type="button"
+                        onClick={() => handleOpenDoc(note)}
                         style={{
                           fontSize: '0.68rem',
                           backgroundColor: '#EFF6FF',
                           color: '#2563EB',
                           padding: '2px 6px',
                           borderRadius: '4px',
-                          textDecoration: 'none',
+                          border: '1px solid #BFDBFE',
+                          cursor: 'pointer',
                           fontWeight: 700,
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          gap: '3px',
                         }}
                       >
-                        📄 Doc
-                      </a>
+                        📄 Doc <ExternalLink size={10} />
+                      </button>
                     )}
                   </div>
                   <p style={{ fontSize: '0.82rem', color: 'var(--text-main)', margin: 0, whiteSpace: 'pre-wrap' }}>
@@ -191,10 +211,10 @@ export const NotesModal = ({ isOpen, onClose, notes = [], onSaveNotes, user }) =
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
                   <button
                     type="button"
-                    onClick={() => exportNoteToGoogleDocs(note, user?.email)}
+                    onClick={() => handleOpenDoc(note)}
                     className="btn-ghost"
                     style={{ padding: '4px', color: '#2563EB' }}
-                    title="Buka di Google Docs"
+                    title={note.googleDocUrl ? 'Buka dokumen Google Docs yang tercantum' : 'Ekspor ke Google Docs baru'}
                   >
                     <ExternalLink size={14} />
                   </button>

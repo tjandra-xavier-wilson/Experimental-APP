@@ -3,7 +3,6 @@ import React, { useState } from 'react';
 import {
   FileText,
   Plus,
-  Search,
   Copy,
   Check,
   Trash2,
@@ -11,7 +10,6 @@ import {
   Download,
   Link as LinkIcon,
   Calendar,
-  Sparkles,
   CheckCircle2,
   X,
 } from 'lucide-react';
@@ -24,23 +22,34 @@ import {
 } from '../../services/googleDocsService';
 import { triggerReminderAlert } from '../../services/notificationService';
 
+// Ensure Google Docs URL has proper https:// protocol
+export const formatGoogleDocUrl = (url) => {
+  if (!url) return '';
+  let clean = url.trim();
+  if (!/^https?:\/\//i.test(clean)) {
+    clean = `https://${clean}`;
+  }
+  return clean;
+};
+
 export const NotesView = ({
   notes = [],
   onOpenNotesModal,
   onSaveNotes,
+  onDeleteNote,
   user,
 }) => {
   const [searchQuery, setSearchQuery] = useState('');
   const [copiedId, setCopiedId] = useState(null);
   const [noteToDelete, setNoteToDelete] = useState(null);
 
-  // Quick inline note creation state
+  // Inline note creation state
   const [isAddingInline, setIsAddingInline] = useState(false);
   const [inlineTitle, setInlineTitle] = useState('');
   const [inlineContent, setInlineContent] = useState('');
   const [inlineDocUrl, setInlineDocUrl] = useState('');
 
-  // Link Doc modal/inline state
+  // Link Doc modal state
   const [linkingNote, setLinkingNote] = useState(null);
   const [docUrlInput, setDocUrlInput] = useState('');
 
@@ -66,11 +75,13 @@ export const NotesView = ({
     e.preventDefault();
     if (!inlineTitle.trim() || !inlineContent.trim()) return;
 
+    const formattedUrl = inlineDocUrl.trim() ? formatGoogleDocUrl(inlineDocUrl) : null;
+
     const newNote = {
       id: `note-${Date.now()}`,
       title: inlineTitle.trim(),
       content: inlineContent.trim(),
-      googleDocUrl: inlineDocUrl.trim() || null,
+      googleDocUrl: formattedUrl,
       date: new Date().toLocaleDateString('id-ID', {
         day: 'numeric',
         month: 'short',
@@ -90,13 +101,25 @@ export const NotesView = ({
     e.preventDefault();
     if (!linkingNote) return;
 
+    const formattedUrl = docUrlInput.trim() ? formatGoogleDocUrl(docUrlInput) : null;
     const updated = notes.map((n) =>
-      n.id === linkingNote.id ? { ...n, googleDocUrl: docUrlInput.trim() || null } : n
+      n.id === linkingNote.id ? { ...n, googleDocUrl: formattedUrl } : n
     );
     onSaveNotes(updated);
     setLinkingNote(null);
     setDocUrlInput('');
     triggerReminderAlert('Tautan Diperbarui', 'Tautan Google Docs berhasil disimpan ke catatan.');
+  };
+
+  const handleConfirmDelete = () => {
+    if (!noteToDelete) return;
+    if (onDeleteNote) {
+      onDeleteNote(noteToDelete.id);
+    } else {
+      const updated = notes.filter((n) => n.id !== noteToDelete.id);
+      onSaveNotes(updated);
+    }
+    setNoteToDelete(null);
   };
 
   return (
@@ -140,7 +163,7 @@ export const NotesView = ({
             Catatan Belajar & Rumus Penting
           </h1>
           <p style={{ margin: 0, fontSize: '0.88rem', color: '#ECFDF5', maxWidth: '620px' }}>
-            Simpan rangkuman materi, rumus penting, dan hubungkan catatan secara langsung ke Google Docs akun Gmail Anda.
+            Simpan rangkuman materi, rumus penting, dan hubungkan catatan secara langsung ke dokumen Google Docs akun Anda.
           </p>
         </div>
 
@@ -212,7 +235,6 @@ export const NotesView = ({
             }}
             title="Google Docs"
           >
-            {/* Google Docs Icon styling */}
             <FileText size={24} />
           </div>
 
@@ -234,11 +256,11 @@ export const NotesView = ({
                   gap: '4px',
                 }}
               >
-                <CheckCircle2 size={12} /> Akun Gmail Terhubung
+                <CheckCircle2 size={12} /> Akun Google Terhubung
               </span>
             </div>
             <p style={{ margin: '3px 0 0 0', fontSize: '0.82rem', color: '#475569' }}>
-              Akun aktif: <strong style={{ color: '#1E40AF' }}>{userEmail}</strong> · Klik &apos;Google Docs&apos; pada setiap catatan untuk langsung membuka dan menyinkronkan dokumen ke Google Drive Anda.
+              Akun aktif: <strong style={{ color: '#1E40AF' }}>{userEmail}</strong> · Klik &apos;Buka Google Doc&apos; pada catatan untuk langsung membuka tautan dokumen yang sama di tab baru.
             </p>
           </div>
         </div>
@@ -263,7 +285,7 @@ export const NotesView = ({
               transition: 'background 150ms ease',
             }}
           >
-            <ExternalLink size={14} /> Buat Dokumen Google Docs Baru
+            <ExternalLink size={14} /> + Buat Dokumen Google Docs Baru
           </button>
 
           <button
@@ -288,7 +310,7 @@ export const NotesView = ({
         </div>
       </div>
 
-      {/* 3. Inline Quick Add Note Card (If opened) */}
+      {/* 3. Inline Quick Add Note Card */}
       {isAddingInline && (
         <form
           onSubmit={handleCreateInlineNote}
@@ -306,7 +328,7 @@ export const NotesView = ({
         >
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
             <h3 style={{ margin: 0, fontSize: '1.05rem', fontWeight: 800, color: '#065F46' }}>
-              ✍️ Tambah Catatan & Hubungkan Dokumen
+              ✍️ Tambah Catatan & Tautkan Google Docs
             </h3>
             <button
               type="button"
@@ -353,8 +375,8 @@ export const NotesView = ({
             {/* Optional Google Doc Link */}
             <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
               <input
-                type="url"
-                placeholder="Tautan Google Docs (opsional: https://docs.google.com/document/d/...)"
+                type="text"
+                placeholder="Tautan Google Docs (contoh: https://docs.google.com/document/d/...)"
                 value={inlineDocUrl}
                 onChange={(e) => setInlineDocUrl(e.target.value)}
                 style={{
@@ -385,7 +407,7 @@ export const NotesView = ({
                   gap: '4px',
                 }}
               >
-                <ExternalLink size={13} /> Buat di Google Docs
+                <ExternalLink size={13} /> Buat Docs Baru
               </button>
             </div>
           </div>
@@ -526,234 +548,262 @@ export const NotesView = ({
             gap: '20px',
           }}
         >
-          {filteredNotes.map((note) => (
-            <div
-              key={note.id}
-              className="card"
-              style={{
-                padding: '22px',
-                display: 'flex',
-                flexDirection: 'column',
-                justifyContent: 'space-between',
-                gap: '14px',
-                borderTop: '4px solid #10B981',
-                borderRadius: '16px',
-                backgroundColor: '#FFFFFF',
-                boxShadow: '0 4px 14px rgba(0,0,0,0.04)',
-                position: 'relative',
-              }}
-            >
-              <div>
-                {/* Note Top Bar: Date & Linked Google Doc Pill */}
+          {filteredNotes.map((note) => {
+            const hasGoogleDocUrl = Boolean(note.googleDocUrl && note.googleDocUrl.trim());
+            const exactDocUrl = hasGoogleDocUrl ? formatGoogleDocUrl(note.googleDocUrl) : '';
+
+            return (
+              <div
+                key={note.id}
+                className="card"
+                style={{
+                  padding: '22px',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  justifyContent: 'space-between',
+                  gap: '14px',
+                  borderTop: '4px solid #10B981',
+                  borderRadius: '16px',
+                  backgroundColor: '#FFFFFF',
+                  boxShadow: '0 4px 14px rgba(0,0,0,0.04)',
+                  position: 'relative',
+                }}
+              >
+                <div>
+                  {/* Note Top Bar: Date & Linked Google Doc Pill */}
+                  <div
+                    style={{
+                      display: 'flex',
+                      justifyContent: 'space-between',
+                      alignItems: 'center',
+                      marginBottom: '10px',
+                      flexWrap: 'wrap',
+                      gap: '6px',
+                    }}
+                  >
+                    <span
+                      style={{
+                        fontSize: '0.74rem',
+                        color: 'var(--text-muted)',
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: '4px',
+                        fontWeight: 600,
+                      }}
+                    >
+                      <Calendar size={12} /> {note.date || 'Tersimpan'}
+                    </span>
+
+                    {hasGoogleDocUrl ? (
+                      <button
+                        type="button"
+                        onClick={() => window.open(exactDocUrl, '_blank', 'noopener,noreferrer')}
+                        style={{
+                          backgroundColor: '#EFF6FF',
+                          color: '#1D4ED8',
+                          padding: '3px 8px',
+                          borderRadius: '6px',
+                          fontSize: '0.72rem',
+                          fontWeight: 700,
+                          border: '1px solid #BFDBFE',
+                          cursor: 'pointer',
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          gap: '4px',
+                        }}
+                        title={`Buka tautan asli: ${exactDocUrl}`}
+                      >
+                        📄 Buka Dokumen Tertaut <ExternalLink size={11} />
+                      </button>
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setLinkingNote(note);
+                          setDocUrlInput(note.googleDocUrl || '');
+                        }}
+                        style={{
+                          background: 'none',
+                          border: 'none',
+                          color: '#3B82F6',
+                          fontSize: '0.72rem',
+                          fontWeight: 600,
+                          cursor: 'pointer',
+                          padding: 0,
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          gap: '3px',
+                        }}
+                      >
+                        <LinkIcon size={11} /> + Tautkan Docs
+                      </button>
+                    )}
+                  </div>
+
+                  {/* Note Title */}
+                  <h3
+                    style={{
+                      fontSize: '1.1rem',
+                      fontWeight: 800,
+                      margin: '0 0 10px 0',
+                      color: 'var(--text-main)',
+                      letterSpacing: '-0.2px',
+                    }}
+                  >
+                    {note.title || 'Catatan Tanpa Judul'}
+                  </h3>
+
+                  {/* Note Content */}
+                  <p
+                    style={{
+                      margin: 0,
+                      fontSize: '0.85rem',
+                      color: '#334155',
+                      lineHeight: 1.6,
+                      whiteSpace: 'pre-wrap',
+                      backgroundColor: '#F8FAFC',
+                      padding: '14px',
+                      borderRadius: '10px',
+                      border: '1px solid #E2E8F0',
+                      fontFamily: 'monospace, sans-serif',
+                      maxHeight: '170px',
+                      overflowY: 'auto',
+                    }}
+                  >
+                    {note.content}
+                  </p>
+                </div>
+
+                {/* Action Toolbar Bottom */}
                 <div
                   style={{
                     display: 'flex',
                     justifyContent: 'space-between',
                     alignItems: 'center',
-                    marginBottom: '10px',
+                    paddingTop: '12px',
+                    borderTop: '1px solid #F1F5F9',
                     flexWrap: 'wrap',
-                    gap: '6px',
+                    gap: '8px',
                   }}
                 >
-                  <span
-                    style={{
-                      fontSize: '0.74rem',
-                      color: 'var(--text-muted)',
-                      display: 'inline-flex',
-                      alignItems: 'center',
-                      gap: '4px',
-                      fontWeight: 600,
-                    }}
-                  >
-                    <Calendar size={12} /> {note.date || 'Tersimpan'}
-                  </span>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                    {/* Google Docs Button: If URL exists, opens that exact URL! Otherwise exports to new doc. */}
+                    {hasGoogleDocUrl ? (
+                      <button
+                        type="button"
+                        onClick={() => window.open(exactDocUrl, '_blank', 'noopener,noreferrer')}
+                        style={{
+                          border: '1px solid #BFDBFE',
+                          backgroundColor: '#EFF6FF',
+                          color: '#1D4ED8',
+                          borderRadius: '8px',
+                          padding: '5px 11px',
+                          fontSize: '0.75rem',
+                          fontWeight: 700,
+                          cursor: 'pointer',
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          gap: '4px',
+                          transition: 'all 150ms ease',
+                        }}
+                        title={`Buka link dokumen Google Docs yang tercantum: ${exactDocUrl}`}
+                      >
+                        <ExternalLink size={12} /> Buka Google Doc
+                      </button>
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={() => exportNoteToGoogleDocs(note, user?.email)}
+                        style={{
+                          border: '1px solid #BFDBFE',
+                          backgroundColor: '#EFF6FF',
+                          color: '#1D4ED8',
+                          borderRadius: '8px',
+                          padding: '5px 10px',
+                          fontSize: '0.75rem',
+                          fontWeight: 700,
+                          cursor: 'pointer',
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          gap: '4px',
+                          transition: 'all 150ms ease',
+                        }}
+                        title={`Salin isi dan buka di Google Docs baru (${userEmail})`}
+                      >
+                        <ExternalLink size={12} /> Ekspor Docs Baru
+                      </button>
+                    )}
 
-                  {note.googleDocUrl ? (
-                    <a
-                      href={note.googleDocUrl}
-                      target="_blank"
-                      rel="noopener noreferrer"
+                    {/* Download Docx Button */}
+                    <button
+                      type="button"
+                      onClick={() => downloadNoteAsDocx(note)}
                       style={{
-                        backgroundColor: '#EFF6FF',
-                        color: '#1D4ED8',
-                        padding: '3px 8px',
-                        borderRadius: '6px',
-                        fontSize: '0.72rem',
-                        fontWeight: 700,
-                        textDecoration: 'none',
+                        border: '1px solid #CBD5E1',
+                        backgroundColor: '#FFFFFF',
+                        color: '#475569',
+                        borderRadius: '8px',
+                        padding: '5px 8px',
+                        fontSize: '0.75rem',
+                        fontWeight: 600,
+                        cursor: 'pointer',
                         display: 'inline-flex',
                         alignItems: 'center',
                         gap: '4px',
-                        border: '1px solid #BFDBFE',
                       }}
-                      title={note.googleDocUrl}
+                      title="Unduh dokumen .docx / Word"
                     >
-                      📄 Google Doc <ExternalLink size={10} />
-                    </a>
-                  ) : (
+                      <Download size={12} /> .docx
+                    </button>
+
+                    {/* Copy Button */}
                     <button
                       type="button"
-                      onClick={() => {
-                        setLinkingNote(note);
-                        setDocUrlInput(note.googleDocUrl || '');
-                      }}
+                      onClick={() => handleCopy(note.id, `${note.title}\n\n${note.content}`)}
                       style={{
-                        background: 'none',
                         border: 'none',
-                        color: '#3B82F6',
-                        fontSize: '0.72rem',
-                        fontWeight: 600,
+                        background: 'transparent',
+                        color: copiedId === note.id ? '#10B981' : '#64748B',
                         cursor: 'pointer',
-                        padding: 0,
                         display: 'inline-flex',
                         alignItems: 'center',
                         gap: '3px',
+                        fontSize: '0.74rem',
+                        fontWeight: 600,
+                        padding: '4px 6px',
                       }}
+                      title="Salin isi catatan"
                     >
-                      <LinkIcon size={11} /> + Tautkan Docs
+                      {copiedId === note.id ? <Check size={13} /> : <Copy size={13} />}
+                      {copiedId === note.id ? 'Tersalin' : 'Salin'}
                     </button>
-                  )}
-                </div>
+                  </div>
 
-                {/* Note Title */}
-                <h3
-                  style={{
-                    fontSize: '1.1rem',
-                    fontWeight: 800,
-                    margin: '0 0 10px 0',
-                    color: 'var(--text-main)',
-                    letterSpacing: '-0.2px',
-                  }}
-                >
-                  {note.title || 'Catatan Tanpa Judul'}
-                </h3>
-
-                {/* Note Content */}
-                <p
-                  style={{
-                    margin: 0,
-                    fontSize: '0.85rem',
-                    color: '#334155',
-                    lineHeight: 1.6,
-                    whiteSpace: 'pre-wrap',
-                    backgroundColor: '#F8FAFC',
-                    padding: '14px',
-                    borderRadius: '10px',
-                    border: '1px solid #E2E8F0',
-                    fontFamily: 'monospace, sans-serif',
-                    maxHeight: '170px',
-                    overflowY: 'auto',
-                  }}
-                >
-                  {note.content}
-                </p>
-              </div>
-
-              {/* Action Toolbar Bottom */}
-              <div
-                style={{
-                  display: 'flex',
-                  justifyContent: 'space-between',
-                  alignItems: 'center',
-                  paddingTop: '12px',
-                  borderTop: '1px solid #F1F5F9',
-                  flexWrap: 'wrap',
-                  gap: '8px',
-                }}
-              >
-                <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                  {/* Google Docs Direct Export Button */}
+                  {/* Custom Delete Trigger */}
                   <button
                     type="button"
-                    onClick={() => exportNoteToGoogleDocs(note, user?.email)}
-                    style={{
-                      border: '1px solid #BFDBFE',
-                      backgroundColor: '#EFF6FF',
-                      color: '#1D4ED8',
-                      borderRadius: '8px',
-                      padding: '5px 10px',
-                      fontSize: '0.75rem',
-                      fontWeight: 700,
-                      cursor: 'pointer',
-                      display: 'inline-flex',
-                      alignItems: 'center',
-                      gap: '4px',
-                      transition: 'all 150ms ease',
-                    }}
-                    title={`Salin isi dan buka di Google Docs (${userEmail})`}
-                  >
-                    <ExternalLink size={12} /> Google Docs
-                  </button>
-
-                  {/* Download Docx Button */}
-                  <button
-                    type="button"
-                    onClick={() => downloadNoteAsDocx(note)}
-                    style={{
-                      border: '1px solid #CBD5E1',
-                      backgroundColor: '#FFFFFF',
-                      color: '#475569',
-                      borderRadius: '8px',
-                      padding: '5px 8px',
-                      fontSize: '0.75rem',
-                      fontWeight: 600,
-                      cursor: 'pointer',
-                      display: 'inline-flex',
-                      alignItems: 'center',
-                      gap: '4px',
-                    }}
-                    title="Unduh dokumen .docx / Word"
-                  >
-                    <Download size={12} /> .docx
-                  </button>
-
-                  {/* Copy Button */}
-                  <button
-                    type="button"
-                    onClick={() => handleCopy(note.id, `${note.title}\n\n${note.content}`)}
+                    onClick={() => setNoteToDelete(note)}
                     style={{
                       border: 'none',
-                      background: 'transparent',
-                      color: copiedId === note.id ? '#10B981' : '#64748B',
-                      cursor: 'pointer',
-                      display: 'inline-flex',
-                      alignItems: 'center',
-                      gap: '3px',
+                      backgroundColor: '#FEE2E2',
+                      color: '#DC2626',
+                      borderRadius: '7px',
+                      padding: '5px 10px',
                       fontSize: '0.74rem',
-                      fontWeight: 600,
-                      padding: '4px 6px',
+                      fontWeight: 700,
+                      cursor: 'pointer',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '4px',
                     }}
-                    title="Salin isi catatan"
+                    title="Hapus Catatan"
                   >
-                    {copiedId === note.id ? <Check size={13} /> : <Copy size={13} />}
-                    {copiedId === note.id ? 'Tersalin' : 'Salin'}
+                    <Trash2 size={13} /> Hapus
                   </button>
                 </div>
-
-                {/* Custom Delete Trigger (No browser popup!) */}
-                <button
-                  type="button"
-                  onClick={() => setNoteToDelete(note)}
-                  style={{
-                    border: 'none',
-                    backgroundColor: '#FEE2E2',
-                    color: '#DC2626',
-                    borderRadius: '7px',
-                    padding: '5px 10px',
-                    fontSize: '0.74rem',
-                    fontWeight: 700,
-                    cursor: 'pointer',
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '4px',
-                  }}
-                  title="Hapus Catatan"
-                >
-                  <Trash2 size={13} /> Hapus
-                </button>
               </div>
-            </div>
-          ))}
+            );
+          })}
         </div>
       )}
 
@@ -797,12 +847,12 @@ export const NotesView = ({
             </div>
 
             <p style={{ margin: '0 0 14px 0', fontSize: '0.84rem', color: '#64748B' }}>
-              Tautkan dokumen Google Docs yang sudah ada untuk catatan &quot;<strong>{linkingNote.title}</strong>&quot;:
+              Tautkan link dokumen Google Docs untuk catatan &quot;<strong>{linkingNote.title}</strong>&quot;:
             </p>
 
             <form onSubmit={handleSaveDocLink}>
               <input
-                type="url"
+                type="text"
                 placeholder="https://docs.google.com/document/d/..."
                 value={docUrlInput}
                 onChange={(e) => setDocUrlInput(e.target.value)}
@@ -856,20 +906,15 @@ export const NotesView = ({
         </div>
       )}
 
-      {/* 7. Custom In-App Delete Confirmation Modal (No browser popup!) */}
+      {/* 7. Custom In-App Delete Confirmation Modal */}
       <ConfirmDeleteModal
         isOpen={Boolean(noteToDelete)}
         onClose={() => setNoteToDelete(null)}
-        onConfirm={() => {
-          if (noteToDelete) {
-            const updated = notes.filter((n) => n.id !== noteToDelete.id);
-            onSaveNotes(updated);
-          }
-        }}
+        onConfirm={handleConfirmDelete}
         title="Hapus Catatan Belajar?"
         itemName={noteToDelete?.title}
         itemType="catatan"
-        description="Catatan materi ini akan dihapus dari penyimpanan. Tindakan ini tidak dapat dibatalkan."
+        description="Catatan materi ini akan dihapus secara permanen dari penyimpanan lokal dan Supabase Cloud."
       />
     </div>
   );

@@ -8,6 +8,7 @@ import {
   syncCourseToSupabase,
   syncFriendsToSupabase,
   syncNotesToSupabase,
+  deleteNoteFromSupabase,
   upsertSupabaseProfile,
   fetchAllUserDataFromSupabase,
 } from './supabaseService.js';
@@ -318,7 +319,13 @@ export const fetchCloudUserData = async (userId) => {
     const finalSchedules = mergeById(mappedSchedules, currentLocal.schedules, syncScheduleToSupabase);
     const finalCourses = mergeById(mappedCourses, currentLocal.courses, syncCourseToSupabase);
     const finalFriends = mappedFriends.length > 0 ? mappedFriends : currentLocal.friends || [];
-    const finalNotes = mappedNotes.length > 0 ? mappedNotes : currentLocal.notes || [];
+    const finalNotes = (mappedNotes || []).map((n) => {
+      const localMatch = (currentLocal.notes || []).find((ln) => ln.id === n.id);
+      return {
+        ...n,
+        googleDocUrl: n.googleDocUrl || localMatch?.googleDocUrl || null,
+      };
+    });
 
     const updatedBundle = {
       ...currentLocal,
@@ -417,8 +424,11 @@ export const registerUser = ({
   const defaultSemester = isSMA ? 'Kelas 11' : 'Semester 4';
   const defaultSchool = isSMA ? 'Mutiara Bangsa 2 School' : 'Universitas Indonesia';
 
-  // Use CANONICAL_USER_ID so all devices (Laptop & HP) share the same cloud database
-  const userId = CANONICAL_USER_ID;
+  // Default user keeps CANONICAL_USER_ID; new accounts receive their own distinct ID
+  const isDefaultAccount = email.trim().toLowerCase() === 'tjandrawilson@mutiarabangsa.sch.id';
+  const userId = isDefaultAccount
+    ? CANONICAL_USER_ID
+    : id || `user-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`;
 
   const newUser = {
     id: userId,
@@ -474,14 +484,9 @@ export const ensureDefaultUser = () => {
     (u) =>
       u.id === CANONICAL_USER_ID ||
       u.email?.toLowerCase() === 'tjandrawilson@mutiarabangsa.sch.id'
-  ) || users[0];
+  );
 
   if (existing) {
-    if (existing.id !== CANONICAL_USER_ID) {
-      existing.id = CANONICAL_USER_ID;
-      saveUsers(users);
-    }
-    setSession(existing, true);
     return existing;
   }
 
@@ -502,8 +507,10 @@ export const ensureDefaultUser = () => {
 };
 
 export const setSession = (user, rememberMe = true) => {
+  if (!user) return;
   const sessionData = {
-    userId: CANONICAL_USER_ID,
+    userId: user.id,
+    userEmail: user.email,
     loggedAt: new Date().toISOString(),
   };
 
@@ -519,42 +526,27 @@ export const setSession = (user, rememberMe = true) => {
 export const getCurrentSession = () => {
   try {
     const remRaw = safeLocalStorage.getItem(STORAGE_KEYS.REMEMBER);
-    if (remRaw) {
-      const parsed = JSON.parse(remRaw);
-      const users = getStoredUsers();
-      let user = users.find((u) => u.id === parsed.userId) || users[0];
-      if (user) {
-        if (user.id !== CANONICAL_USER_ID) {
-          user = { ...user, id: CANONICAL_USER_ID };
-          safeLocalStorage.setItem(
-            STORAGE_KEYS.REMEMBER,
-            JSON.stringify({ userId: CANONICAL_USER_ID, loggedAt: new Date().toISOString() })
-          );
-        }
-        return { user, rememberMe: true };
-      }
-    }
-
     const sessRaw = safeSessionStorage.getItem(STORAGE_KEYS.SESSION);
-    if (sessRaw) {
-      const parsed = JSON.parse(sessRaw);
-      const users = getStoredUsers();
-      let user = users.find((u) => u.id === parsed.userId) || users[0];
-      if (user) {
-        if (user.id !== CANONICAL_USER_ID) {
-          user = { ...user, id: CANONICAL_USER_ID };
-          safeSessionStorage.setItem(
-            STORAGE_KEYS.SESSION,
-            JSON.stringify({ userId: CANONICAL_USER_ID, loggedAt: new Date().toISOString() })
-          );
-        }
-        return { user, rememberMe: false };
-      }
+    const raw = remRaw || sessRaw;
+    if (!raw) return null;
+
+    const parsed = JSON.parse(raw);
+    const users = getStoredUsers();
+
+    // Look up active account by userEmail first (most reliable), then by userId
+    let user = null;
+    if (parsed.userEmail) {
+      user = users.find((u) => u.email?.toLowerCase() === parsed.userEmail.toLowerCase());
+    }
+    if (!user && parsed.userId) {
+      user = users.find((u) => u.id === parsed.userId);
     }
 
-    // Default auto-login to canonical user on new devices (e.g. mobile HP)
-    const defaultUser = ensureDefaultUser();
-    return { user: defaultUser, rememberMe: true };
+    if (user) {
+      return { user, rememberMe: Boolean(remRaw) };
+    }
+
+    return null;
   } catch (e) {
     console.error('Session check error:', e);
     return null;
@@ -851,29 +843,46 @@ export const addFriend = (userId, friendData) => {
 export const getNotes = (userId) => {
   if (!userId) return [];
   const data = getUserData(userId);
-  return (
-    data?.notes || [
-      {
-        id: 'note-1',
-        title: 'Ringkasan Rumus Big-O',
-        content:
-          'O(1) < O(log n) < O(n) < O(n log n) < O(n^2). Selalu optimalkan loop bersarang!',
-        date: new Date().toLocaleDateString('id-ID'),
-      },
-    ]
-  );
+  if (data && Array.isArray(data.notes)) {
+    return data.notes;
+  }
+  return [];
 };
 
 export const saveNotes = (userId, notes) => {
+  if (!userId) return notes || [];
   const data = getUserData(userId) || {};
+  const prevNotes = data.notes || [];
   data.notes = notes;
   saveUserData(userId, data);
 
-  if (isSupabaseConfigured() && userId) {
+  // Detect which notes were removed to delete them permanently from Supabase
+  const newIds = new Set((notes || []).map((n) => n.id));
+  const removedNotes = prevNotes.filter((n) => !newIds.has(n.id));
+
+  if (isSupabaseConfigured()) {
+    for (const r of removedNotes) {
+      deleteNoteFromSupabase(r.id).catch((e) =>
+        console.warn('Supabase delete note error:', e)
+      );
+    }
     syncNotesToSupabase(userId, notes).catch((e) =>
       console.warn('Supabase notes sync warning:', e)
     );
   }
 
   return data.notes;
+};
+
+export const deleteNote = (userId, noteId) => {
+  if (!userId || !noteId) return [];
+  const current = getNotes(userId);
+  const updated = current.filter((n) => n.id !== noteId);
+  saveNotes(userId, updated);
+  if (isSupabaseConfigured()) {
+    deleteNoteFromSupabase(noteId).catch((e) =>
+      console.warn('Supabase delete note error:', e)
+    );
+  }
+  return updated;
 };

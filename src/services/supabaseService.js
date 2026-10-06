@@ -368,6 +368,13 @@ export const syncNotesToSupabase = async (userId, notes) => {
   }
 };
 
+export const deleteNoteFromSupabase = async (noteId) => {
+  const client = getSupabase();
+  if (!client || !noteId) return;
+  const { error } = await client.from('notes').delete().eq('id', noteId);
+  if (error) console.error('Error deleting note from Supabase:', error);
+};
+
 /**
  * ==========================================================
  * BATCH SYNC LOCAL DATA -> SUPABASE
