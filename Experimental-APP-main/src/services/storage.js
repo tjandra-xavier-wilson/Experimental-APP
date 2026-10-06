@@ -297,24 +297,45 @@ export const fetchCloudUserData = async (userId) => {
     const mappedFriends = (friendData || []).map(friendFromSupabase);
     const mappedNotes = (noteData || []).map(noteFromSupabase);
 
-    // Update local cache for instant offline responsiveness
+    // Update local cache with Smart Bidirectional Merge (cloud + local)
     const currentLocal = getUserData(userId) || {};
+
+    const mergeById = (cloudList, localList, syncFn) => {
+      const map = new Map();
+      cloudList.forEach((item) => map.set(item.id, item));
+      (localList || []).forEach((item) => {
+        if (!map.has(item.id)) {
+          map.set(item.id, item);
+          if (syncFn && isSupabaseConfigured() && userId) {
+            syncFn(userId, item).catch(() => {});
+          }
+        }
+      });
+      return Array.from(map.values());
+    };
+
+    const finalTasks = mergeById(mappedTasks, currentLocal.tasks, syncTaskToSupabase);
+    const finalSchedules = mergeById(mappedSchedules, currentLocal.schedules, syncScheduleToSupabase);
+    const finalCourses = mergeById(mappedCourses, currentLocal.courses, syncCourseToSupabase);
+    const finalFriends = mappedFriends.length > 0 ? mappedFriends : currentLocal.friends || [];
+    const finalNotes = mappedNotes.length > 0 ? mappedNotes : currentLocal.notes || [];
+
     const updatedBundle = {
       ...currentLocal,
-      tasks: mappedTasks,
-      schedules: mappedSchedules.length > 0 ? mappedSchedules : currentLocal.schedules || [],
-      courses: mappedCourses.length > 0 ? mappedCourses : currentLocal.courses || [],
-      friends: mappedFriends.length > 0 ? mappedFriends : currentLocal.friends || [],
-      notes: mappedNotes.length > 0 ? mappedNotes : currentLocal.notes || [],
+      tasks: finalTasks,
+      schedules: finalSchedules,
+      courses: finalCourses,
+      friends: finalFriends,
+      notes: finalNotes,
     };
     saveUserData(userId, updatedBundle);
 
     return {
-      tasks: mappedTasks,
-      schedules: mappedSchedules,
-      courses: mappedCourses,
-      friends: mappedFriends,
-      notes: mappedNotes,
+      tasks: finalTasks,
+      schedules: finalSchedules,
+      courses: finalCourses,
+      friends: finalFriends,
+      notes: finalNotes,
     };
   } catch (err) {
     console.error('Error in fetchCloudUserData:', err);
