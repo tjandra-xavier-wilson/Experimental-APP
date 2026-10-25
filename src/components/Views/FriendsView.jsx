@@ -1,5 +1,5 @@
 // src/components/Views/FriendsView.jsx
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   Users,
   Plus,
@@ -14,9 +14,15 @@ import {
   Award,
   ShieldCheck,
   HeartHandshake,
+  Search,
+  AlertCircle,
+  CheckCircle,
+  RefreshCw,
 } from 'lucide-react';
 import { ConfirmDeleteModal } from '../ConfirmDeleteModal';
 import { ProfileCustomizeModal } from '../ProfileCustomizeModal';
+import { fetchRegisteredProfiles } from '../../services/supabaseService';
+import { isSupabaseConfigured } from '../../services/supabaseClient';
 
 export const FriendsView = ({
   friends = [],
@@ -31,12 +37,30 @@ export const FriendsView = ({
   const [showCustomizeModal, setShowCustomizeModal] = useState(false);
   const [friendToDelete, setFriendToDelete] = useState(null);
 
-  // New friend form states
+  // New friend form & server lookup states
   const [newFriendName, setNewFriendName] = useState('');
-  const [newFriendMajor, setNewFriendMajor] = useState('IPA');
-  const [newFriendSchool, setNewFriendSchool] = useState('Mutiara Bangsa 2 School');
-  const [newFriendSemester, setNewFriendSemester] = useState('Kelas 11');
-  const [newFriendColor, setNewFriendColor] = useState('#8B5CF6');
+  const [serverProfiles, setServerProfiles] = useState([]);
+  const [isLoadingProfiles, setIsLoadingProfiles] = useState(false);
+
+  const loadServerProfiles = async () => {
+    setIsLoadingProfiles(true);
+    try {
+      if (isSupabaseConfigured()) {
+        const profiles = await fetchRegisteredProfiles(currentUser?.id);
+        setServerProfiles(profiles);
+      }
+    } catch (err) {
+      console.warn('Failed to load registered profiles:', err);
+    } finally {
+      setIsLoadingProfiles(false);
+    }
+  };
+
+  useEffect(() => {
+    if (showAddModal) {
+      loadServerProfiles();
+    }
+  }, [showAddModal]);
 
   // Compute live task progress for user's own card
   const totalMyTasks = tasks.length || 0;
@@ -57,27 +81,48 @@ export const FriendsView = ({
     );
   };
 
-  const handleAddSubmit = (e) => {
-    e.preventDefault();
-    if (!newFriendName.trim()) return;
+  // Filter server profiles based on input
+  const queryTrimmed = newFriendName.trim().toLowerCase();
+  const matchedProfiles = queryTrimmed
+    ? serverProfiles.filter(
+        (p) =>
+          p.name?.toLowerCase().includes(queryTrimmed) ||
+          p.email?.toLowerCase().includes(queryTrimmed) ||
+          p.schoolName?.toLowerCase().includes(queryTrimmed)
+      )
+    : [];
 
+  const isNotFound = queryTrimmed.length >= 2 && matchedProfiles.length === 0;
+
+  const handleAddVerifiedFriend = (profile) => {
+    if (!profile) return;
     if (onAddFriend) {
       onAddFriend({
-        name: newFriendName.trim(),
-        major: newFriendMajor.trim() || 'IPA',
-        schoolName: newFriendSchool.trim() || 'Mutiara Bangsa 2 School',
-        semester: newFriendSemester.trim() || 'Kelas 11',
-        avatarBg: newFriendColor,
-        progress: 40,
-        completedTasks: 2,
-        totalTasks: 5,
-        status: 'Sedang Belajar 📚',
-        nearestTaskTitle: 'Tugas Pendalaman Materi',
+        id: `frd-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
+        name: profile.name,
+        major: profile.major || 'IPA',
+        schoolName: profile.schoolName || 'Mutiara Bangsa 2 School',
+        semester: profile.semester || 'Kelas 11',
+        avatarBg: profile.avatarBg || '#8B5CF6',
+        progress: 0,
+        completedTasks: 0,
+        totalTasks: 0,
+        status: profile.status || 'Sedang Belajar 📚',
+        nearestTaskTitle: 'Tugas Belajar Mandiri',
+        nearestTaskDue: 'Hari ini, 23:59 WIB',
+        nearestTaskCourse: profile.major || 'Umum',
       });
     }
-
     setNewFriendName('');
     setShowAddModal(false);
+  };
+
+  const handleAddSubmit = (e) => {
+    e.preventDefault();
+    if (!queryTrimmed) return;
+    if (matchedProfiles.length > 0) {
+      handleAddVerifiedFriend(matchedProfiles[0]);
+    }
   };
 
   const userAvatarBg = currentUser?.avatarBg || '#8E94F2';
@@ -672,7 +717,7 @@ export const FriendsView = ({
         </div>
       )}
 
-      {/* Add Friend Modal */}
+      {/* Add Friend Modal (Server Verified Realtime) */}
       {showAddModal && (
         <div
           className="modal-overlay"
@@ -680,8 +725,8 @@ export const FriendsView = ({
             zIndex: 110,
             position: 'fixed',
             inset: 0,
-            backgroundColor: 'rgba(15, 23, 42, 0.6)',
-            backdropFilter: 'blur(4px)',
+            backgroundColor: 'rgba(15, 23, 42, 0.65)',
+            backdropFilter: 'blur(5px)',
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
@@ -691,119 +736,297 @@ export const FriendsView = ({
           <div
             className="modal-content"
             style={{
-              maxWidth: '440px',
+              maxWidth: '480px',
               width: '100%',
               backgroundColor: '#FFFFFF',
-              borderRadius: '16px',
+              borderRadius: '20px',
               padding: '24px',
-              boxShadow: '0 20px 40px -8px rgba(0,0,0,0.2)',
+              boxShadow: '0 25px 50px -12px rgba(0,0,0,0.25)',
+              maxHeight: '90vh',
+              display: 'flex',
+              flexDirection: 'column',
             }}
           >
-            <h3
-              style={{
-                margin: '0 0 16px 0',
-                fontSize: '1.15rem',
-                fontWeight: 800,
-                color: '#1E293B',
-              }}
-            >
-              Tambah Rekan Belajar Baru
-            </h3>
-            <form
-              onSubmit={handleAddSubmit}
-              style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}
-            >
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '14px' }}>
+              <div>
+                <h3
+                  style={{
+                    margin: 0,
+                    fontSize: '1.2rem',
+                    fontWeight: 800,
+                    color: '#1E293B',
+                  }}
+                >
+                  Hubungkan Rekan Belajar
+                </h3>
+                <p style={{ margin: '3px 0 0 0', fontSize: '0.78rem', color: '#64748B' }}>
+                  Realtime sync database Supabase · Hanya pengguna terdaftar
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={loadServerProfiles}
+                disabled={isLoadingProfiles}
+                title="Muat Ulang Data Server"
+                style={{
+                  background: '#F1F5F9',
+                  border: 'none',
+                  borderRadius: '8px',
+                  padding: '6px 10px',
+                  cursor: 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '4px',
+                  fontSize: '0.74rem',
+                  color: '#475569',
+                  fontWeight: 600,
+                }}
+              >
+                <RefreshCw size={13} className={isLoadingProfiles ? 'animate-spin' : ''} />
+                Refresh
+              </button>
+            </div>
+
+            <form onSubmit={handleAddSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
               <div>
                 <label
                   style={{
                     display: 'block',
                     fontSize: '0.8rem',
-                    fontWeight: 600,
+                    fontWeight: 700,
                     marginBottom: '6px',
-                    color: '#475569',
+                    color: '#334155',
                   }}
                 >
-                  Nama Rekan Belajar
+                  Cari Nama atau Email Rekan di Server
                 </label>
-                <input
-                  type="text"
-                  required
-                  placeholder="Contoh: Budi Pratama"
-                  value={newFriendName}
-                  onChange={(e) => setNewFriendName(e.target.value)}
-                  style={{
-                    width: '100%',
-                    padding: '9px 12px',
-                    borderRadius: '8px',
-                    border: '1px solid #CBD5E1',
-                    outline: 'none',
-                    fontSize: '0.85rem',
-                  }}
-                />
+                <div style={{ position: 'relative' }}>
+                  <Search size={16} color="#94A3B8" style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)' }} />
+                  <input
+                    type="text"
+                    required
+                    placeholder="Ketik nama atau email rekan (contoh: Kevin / adik)..."
+                    value={newFriendName}
+                    onChange={(e) => setNewFriendName(e.target.value)}
+                    autoFocus
+                    style={{
+                      width: '100%',
+                      padding: '10px 12px 10px 38px',
+                      borderRadius: '10px',
+                      border: isNotFound ? '2px solid #EF4444' : '1.5px solid #CBD5E1',
+                      outline: 'none',
+                      fontSize: '0.88rem',
+                      transition: 'border-color 0.15s ease',
+                    }}
+                  />
+                </div>
               </div>
 
-              <div>
-                <label
+              {/* RED ERROR MESSAGE IF NAME NOT REGISTERED ON SERVER */}
+              {isNotFound && (
+                <div
                   style={{
-                    display: 'block',
-                    fontSize: '0.8rem',
-                    fontWeight: 600,
-                    marginBottom: '6px',
-                    color: '#475569',
+                    padding: '12px 14px',
+                    backgroundColor: '#FEF2F2',
+                    border: '1.5px solid #F87171',
+                    borderRadius: '10px',
+                    color: '#DC2626',
+                    display: 'flex',
+                    alignItems: 'flex-start',
+                    gap: '10px',
+                    animation: 'fadeIn 0.2s ease',
                   }}
                 >
-                  Jurusan / Minat
-                </label>
-                <input
-                  type="text"
-                  placeholder="Contoh: IPA / Informatika"
-                  value={newFriendMajor}
-                  onChange={(e) => setNewFriendMajor(e.target.value)}
-                  style={{
-                    width: '100%',
-                    padding: '9px 12px',
-                    borderRadius: '8px',
-                    border: '1px solid #CBD5E1',
-                    outline: 'none',
-                    fontSize: '0.85rem',
-                  }}
-                />
-              </div>
+                  <AlertCircle size={18} color="#DC2626" style={{ flexShrink: 0, marginTop: '2px' }} />
+                  <div>
+                    <div style={{ fontWeight: 800, fontSize: '0.85rem', color: '#B91C1C' }}>
+                      Nama &quot;{newFriendName}&quot; Tidak Ditemukan di Server!
+                    </div>
+                    <div style={{ fontSize: '0.78rem', color: '#EF4444', marginTop: '3px', lineHeight: 1.4, fontWeight: 500 }}>
+                      Hanya pengguna yang sudah terdaftar (register) di server database yang dapat ditambahkan sebagai rekan belajar.
+                      Pastikan rekan atau adik Anda sudah mendaftar akun di aplikasi ini terlebih dahulu.
+                    </div>
+                  </div>
+                </div>
+              )}
 
-              <div>
-                <label
-                  style={{
-                    display: 'block',
-                    fontSize: '0.8rem',
-                    fontWeight: 600,
-                    marginBottom: '6px',
-                    color: '#475569',
-                  }}
-                >
-                  Kelas / Semester
-                </label>
-                <input
-                  type="text"
-                  placeholder="Contoh: Kelas 11 / Semester 4"
-                  value={newFriendSemester}
-                  onChange={(e) => setNewFriendSemester(e.target.value)}
-                  style={{
-                    width: '100%',
-                    padding: '9px 12px',
-                    borderRadius: '8px',
-                    border: '1px solid #CBD5E1',
-                    outline: 'none',
-                    fontSize: '0.85rem',
-                  }}
-                />
-              </div>
+              {/* MATCHED PROFILES LIST */}
+              {queryTrimmed && matchedProfiles.length > 0 && (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', maxHeight: '200px', overflowY: 'auto' }}>
+                  <span style={{ fontSize: '0.74rem', fontWeight: 700, color: '#15803D' }}>
+                    Ditemukan {matchedProfiles.length} Rekan Terdaftar:
+                  </span>
+                  {matchedProfiles.map((p) => {
+                    const alreadyFriend = friends.some((f) => f.name?.toLowerCase() === p.name?.toLowerCase());
+                    return (
+                      <div
+                        key={p.id}
+                        style={{
+                          padding: '10px 12px',
+                          backgroundColor: '#F0FDF4',
+                          border: '1.5px solid #BBF7D0',
+                          borderRadius: '10px',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'space-between',
+                          gap: '10px',
+                        }}
+                      >
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '10px', minWidth: 0 }}>
+                          <div
+                            style={{
+                              width: '36px',
+                              height: '36px',
+                              borderRadius: '50%',
+                              backgroundColor: p.avatarBg || '#7C3AED',
+                              color: '#FFFFFF',
+                              fontWeight: 800,
+                              display: 'flex',
+                              alignItems: 'center',
+                              justifyContent: 'center',
+                              fontSize: '0.82rem',
+                              flexShrink: 0,
+                            }}
+                          >
+                            {getInitials(p.name)}
+                          </div>
+                          <div style={{ minWidth: 0 }}>
+                            <div style={{ fontWeight: 700, fontSize: '0.86rem', color: '#166534', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                              {p.name}
+                            </div>
+                            <div style={{ fontSize: '0.74rem', color: '#15803D', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                              {p.schoolName} · {p.major} ({p.semester})
+                            </div>
+                          </div>
+                        </div>
+
+                        {alreadyFriend ? (
+                          <span style={{ fontSize: '0.74rem', color: '#166534', fontWeight: 700, padding: '4px 8px', backgroundColor: '#DCFCE7', borderRadius: '6px', flexShrink: 0 }}>
+                            ✓ Terhubung
+                          </span>
+                        ) : (
+                          <button
+                            type="button"
+                            onClick={() => handleAddVerifiedFriend(p)}
+                            style={{
+                              backgroundColor: '#16A34A',
+                              color: '#FFFFFF',
+                              border: 'none',
+                              borderRadius: '8px',
+                              padding: '6px 12px',
+                              fontSize: '0.78rem',
+                              fontWeight: 700,
+                              cursor: 'pointer',
+                              flexShrink: 0,
+                            }}
+                          >
+                            + Hubungkan
+                          </button>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+
+              {/* BROWSE ALL REGISTERED PROFILES ON SERVER */}
+              {!queryTrimmed && (
+                <div style={{ marginTop: '4px' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+                    <span style={{ fontSize: '0.76rem', fontWeight: 700, color: '#475569' }}>
+                      Pengguna Terdaftar di Server ({serverProfiles.length}):
+                    </span>
+                    <span style={{ fontSize: '0.7rem', color: '#94A3B8' }}>Klik untuk hubungkan</span>
+                  </div>
+
+                  {serverProfiles.length === 0 ? (
+                    <div style={{ padding: '16px', textAlign: 'center', fontSize: '0.8rem', color: '#94A3B8', border: '1px dashed #CBD5E1', borderRadius: '10px' }}>
+                      {isLoadingProfiles ? 'Memeriksa database server...' : 'Belum ada pengguna lain terdaftar di server.'}
+                    </div>
+                  ) : (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', maxHeight: '180px', overflowY: 'auto' }}>
+                      {serverProfiles.map((p) => {
+                        const alreadyFriend = friends.some((f) => f.name?.toLowerCase() === p.name?.toLowerCase());
+                        return (
+                          <div
+                            key={p.id}
+                            style={{
+                              padding: '8px 12px',
+                              backgroundColor: '#F8FAFC',
+                              border: '1px solid #E2E8F0',
+                              borderRadius: '8px',
+                              display: 'flex',
+                              alignItems: 'center',
+                              justifyContent: 'space-between',
+                              gap: '10px',
+                            }}
+                          >
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', minWidth: 0 }}>
+                              <div
+                                style={{
+                                  width: '30px',
+                                  height: '30px',
+                                  borderRadius: '50%',
+                                  backgroundColor: p.avatarBg || '#8E94F2',
+                                  color: '#FFFFFF',
+                                  fontWeight: 700,
+                                  display: 'flex',
+                                  alignItems: 'center',
+                                  justifyContent: 'center',
+                                  fontSize: '0.76rem',
+                                  flexShrink: 0,
+                                }}
+                              >
+                                {getInitials(p.name)}
+                              </div>
+                              <div style={{ minWidth: 0 }}>
+                                <div style={{ fontWeight: 600, fontSize: '0.82rem', color: '#1E293B', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                                  {p.name}
+                                </div>
+                                <div style={{ fontSize: '0.72rem', color: '#64748B' }}>
+                                  {p.schoolName} · {p.major}
+                                </div>
+                              </div>
+                            </div>
+
+                            {alreadyFriend ? (
+                              <span style={{ fontSize: '0.72rem', color: '#16A34A', fontWeight: 600 }}>
+                                ✓ Berteman
+                              </span>
+                            ) : (
+                              <button
+                                type="button"
+                                onClick={() => handleAddVerifiedFriend(p)}
+                                style={{
+                                  backgroundColor: '#7C3AED',
+                                  color: '#FFFFFF',
+                                  border: 'none',
+                                  borderRadius: '6px',
+                                  padding: '5px 10px',
+                                  fontSize: '0.74rem',
+                                  fontWeight: 600,
+                                  cursor: 'pointer',
+                                }}
+                              >
+                                + Hubungkan
+                              </button>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+              )}
 
               <div
                 style={{
                   display: 'flex',
                   justifyContent: 'flex-end',
                   gap: '8px',
-                  marginTop: '10px',
+                  marginTop: '12px',
+                  paddingTop: '10px',
+                  borderTop: '1px solid #F1F5F9',
                 }}
               >
                 <button
@@ -812,20 +1035,22 @@ export const FriendsView = ({
                   className="btn-secondary"
                   style={{ padding: '8px 14px', fontSize: '0.84rem' }}
                 >
-                  Batal
+                  Tutup
                 </button>
-                <button
-                  type="submit"
-                  className="btn-primary"
-                  style={{
-                    padding: '8px 18px',
-                    fontSize: '0.84rem',
-                    backgroundColor: '#7C3AED',
-                    borderColor: '#7C3AED',
-                  }}
-                >
-                  Simpan Rekan Belajar
-                </button>
+                {matchedProfiles.length > 0 && (
+                  <button
+                    type="submit"
+                    className="btn-primary"
+                    style={{
+                      padding: '8px 18px',
+                      fontSize: '0.84rem',
+                      backgroundColor: '#16A34A',
+                      borderColor: '#16A34A',
+                    }}
+                  >
+                    Hubungkan ({matchedProfiles[0].name})
+                  </button>
+                )}
               </div>
             </form>
           </div>

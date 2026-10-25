@@ -1,8 +1,10 @@
 // src/components/FriendsWidget.jsx
-import React, { useState } from 'react';
-import { Users, Plus, Search, Sparkles, CheckCircle2, Clock, BookOpen, Heart, X } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { Users, Plus, Search, Sparkles, CheckCircle2, Clock, BookOpen, Heart, X, AlertCircle } from 'lucide-react';
 import confetti from 'canvas-confetti';
 import { triggerReminderAlert } from '../services/notificationService';
+import { fetchRegisteredProfiles } from '../services/supabaseService';
+import { isSupabaseConfigured } from '../services/supabaseClient';
 
 // Circular SVG Progress Ring Component
 const AvatarProgressRing = ({ progress = 0, size = 52, stroke = 3.5, color = '#8E94F2', children }) => {
@@ -56,6 +58,29 @@ export const FriendsWidget = ({
   const [majorInput, setMajorInput] = useState('');
   const [taskInput, setTaskInput] = useState('');
   const [progressInput, setProgressInput] = useState(50);
+  const [serverProfiles, setServerProfiles] = useState([]);
+  const [isLoadingProfiles, setIsLoadingProfiles] = useState(false);
+
+  useEffect(() => {
+    if (isAddModalOpen && isSupabaseConfigured()) {
+      setIsLoadingProfiles(true);
+      fetchRegisteredProfiles()
+        .then((p) => setServerProfiles(p || []))
+        .catch(() => {})
+        .finally(() => setIsLoadingProfiles(false));
+    }
+  }, [isAddModalOpen]);
+
+  const queryTrimmed = nameInput.trim().toLowerCase();
+  const matchedProfiles = queryTrimmed
+    ? serverProfiles.filter(
+        (p) =>
+          p.name?.toLowerCase().includes(queryTrimmed) ||
+          p.email?.toLowerCase().includes(queryTrimmed)
+      )
+    : [];
+
+  const isNotFound = queryTrimmed.length >= 2 && matchedProfiles.length === 0;
 
   const filteredFriends = friends.filter(
     (f) =>
@@ -88,21 +113,25 @@ export const FriendsWidget = ({
   const handleFormSubmit = (e) => {
     e.preventDefault();
     if (!nameInput.trim()) return;
+    if (isNotFound) return;
 
+    const matched = matchedProfiles[0];
     const colors = ['#8E94F2', '#ED64A6', '#48BB78', '#ED8936', '#4299E1'];
-    const randomColor = colors[Math.floor(Math.random() * colors.length)];
+    const randomColor = matched?.avatarBg || colors[Math.floor(Math.random() * colors.length)];
 
     onAddFriend({
-      name: nameInput.trim(),
-      major: majorInput.trim() || 'Teknik Informatika',
+      name: matched?.name || nameInput.trim(),
+      major: matched?.major || majorInput.trim() || 'IPA',
+      schoolName: matched?.schoolName || 'Mutiara Bangsa 2 School',
+      semester: matched?.semester || 'Kelas 11',
       avatarBg: randomColor,
       progress: Number(progressInput),
       completedTasks: Math.round((Number(progressInput) / 100) * 4),
       totalTasks: 4,
-      status: Number(progressInput) === 100 ? 'Santai Sejenak ☕' : 'Fokus Tugas 🔥',
+      status: Number(progressInput) === 100 ? 'Santai Sejenak ☕' : (matched?.status || 'Fokus Belajar 🔥'),
       nearestTaskTitle: taskInput.trim() || 'Mengerjakan Modul Latihan',
       nearestTaskDue: 'Hari ini, 23:59 WIB',
-      nearestTaskCourse: majorInput.trim() || 'Mata Kuliah Utama',
+      nearestTaskCourse: matched?.major || majorInput.trim() || 'Mata Pelajaran Utama',
     });
 
     setNameInput('');
@@ -640,11 +669,47 @@ export const FriendsWidget = ({
                     width: '100%',
                     padding: '9px 12px',
                     borderRadius: 'var(--radius-sm)',
-                    border: '1px solid var(--border-subtle)',
+                    border: isNotFound ? '2px solid #EF4444' : '1px solid var(--border-subtle)',
                     fontSize: '0.9rem',
                     outline: 'none',
                   }}
                 />
+                {isNotFound && (
+                  <div
+                    style={{
+                      marginTop: '8px',
+                      padding: '8px 12px',
+                      backgroundColor: '#FEF2F2',
+                      border: '1.5px solid #F87171',
+                      borderRadius: '8px',
+                      color: '#DC2626',
+                      fontSize: '0.78rem',
+                      fontWeight: 600,
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '6px',
+                    }}
+                  >
+                    <AlertCircle size={15} color="#DC2626" style={{ flexShrink: 0 }} />
+                    <span>Nama &quot;{nameInput}&quot; tidak terdaftar di server database! Hanya rekan yang sudah register yang dapat dihubungkan.</span>
+                  </div>
+                )}
+                {queryTrimmed && matchedProfiles.length > 0 && (
+                  <div
+                    style={{
+                      marginTop: '8px',
+                      padding: '8px 10px',
+                      backgroundColor: '#F0FDF4',
+                      border: '1px solid #BBF7D0',
+                      borderRadius: '8px',
+                      fontSize: '0.78rem',
+                      color: '#166534',
+                      fontWeight: 600,
+                    }}
+                  >
+                    ✓ Terverifikasi di Server: {matchedProfiles[0].name} ({matchedProfiles[0].schoolName || matchedProfiles[0].major})
+                  </div>
+                )}
               </div>
 
               <div style={{ marginBottom: '14px' }}>
@@ -736,8 +801,14 @@ export const FriendsWidget = ({
                 </button>
                 <button
                   type="submit"
+                  disabled={isNotFound || !nameInput.trim()}
                   className="btn-primary"
-                  style={{ padding: '8px 20px', fontSize: '0.88rem' }}
+                  style={{
+                    padding: '8px 20px',
+                    fontSize: '0.88rem',
+                    opacity: isNotFound || !nameInput.trim() ? 0.6 : 1,
+                    cursor: isNotFound || !nameInput.trim() ? 'not-allowed' : 'pointer',
+                  }}
                 >
                   Simpan Teman
                 </button>

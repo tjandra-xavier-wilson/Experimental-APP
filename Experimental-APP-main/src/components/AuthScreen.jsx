@@ -18,11 +18,13 @@ import {
   Check,
   Calendar,
   Database,
+  Smartphone,
+  CheckCircle,
 } from 'lucide-react';
 import { ICTLogo } from './ICTLogo';
 import { registerUser, loginUser } from '../services/storage';
 import { isSupabaseConfigured } from '../services/supabaseClient';
-import { supabaseSignIn, supabaseSignUp } from '../services/supabaseService';
+import { supabaseSignIn, supabaseSignUp, signInWithGoogleOAuth } from '../services/supabaseService';
 import { SupabaseModal } from './SupabaseModal';
 
 export const AuthScreen = ({ isOpen = true, onAuthSuccess }) => {
@@ -31,18 +33,22 @@ export const AuthScreen = ({ isOpen = true, onAuthSuccess }) => {
   const [showPassword, setShowPassword] = useState(false);
   const [isSupabaseModalOpen, setIsSupabaseModalOpen] = useState(false);
   const [error, setError] = useState('');
+  const [googleLoading, setGoogleLoading] = useState(false);
+  const [showGoogleModal, setShowGoogleModal] = useState(false);
+  const [googleDeviceEmail, setGoogleDeviceEmail] = useState('');
+  const [googleDeviceName, setGoogleDeviceName] = useState('');
 
-  // Form State
+  // Form State (Cleared so new devices on brother's phone start fresh)
   const [formData, setFormData] = useState({
-    name: 'Tjandra Wilson',
-    email: 'tjandrawilson@mutiarabangsa.sch.id',
-    password: 'password123',
+    name: '',
+    email: '',
+    password: '',
     educationLevel: 'Siswa SMA/SMK', // 'Siswa SMA/SMK' | 'Mahasiswa'
     schoolName: 'Mutiara Bangsa 2 School',
-    classGrade: 'Kelas 11',
+    classGrade: 'Kelas 10',
     majorSMA: 'IPA',
     collegeMajor: 'Informatika / Ilmu Komputer / Data Science',
-    collegeSemester: 'Semester 4',
+    collegeSemester: 'Semester 1',
     studyPreference: 'balanced',
   });
 
@@ -180,14 +186,80 @@ export const AuthScreen = ({ isOpen = true, onAuthSuccess }) => {
     }
   };
 
-  // Quick Demo Logins
+  // Google Sign-In & Device Authenticator Handlers
+  const handleGoogleSignIn = async () => {
+    setError('');
+    setGoogleLoading(true);
+
+    try {
+      if (isSupabaseConfigured()) {
+        await signInWithGoogleOAuth();
+        // Browser redirects to Google accounts page
+        return;
+      }
+    } catch (err) {
+      console.warn('Supabase Google OAuth initiation notice:', err);
+      // Fallback: If Google provider not yet enabled in Supabase project, open device Google register modal
+      setGoogleLoading(false);
+      setShowGoogleModal(true);
+      return;
+    }
+
+    setGoogleLoading(false);
+    setShowGoogleModal(true);
+  };
+
+  const handleGoogleDeviceRegister = (e) => {
+    e.preventDefault();
+    if (!googleDeviceEmail.trim() || !googleDeviceName.trim()) {
+      setError('Harap masukkan nama dan email akun Google perangkat Anda.');
+      return;
+    }
+
+    try {
+      const email = googleDeviceEmail.trim().toLowerCase();
+      const name = googleDeviceName.trim();
+      const isSMA = formData.educationLevel === 'Siswa SMA/SMK';
+      const finalMajor = isSMA ? formData.majorSMA : formData.collegeMajor;
+      const finalSemester = isSMA ? formData.classGrade : formData.collegeSemester;
+
+      const newUser = registerUser({
+        name,
+        email,
+        password: 'google_session_' + Date.now(),
+        educationLevel: formData.educationLevel,
+        schoolName: formData.schoolName,
+        major: finalMajor,
+        semester: finalSemester,
+        rememberMe: true,
+      });
+
+      if (isSupabaseConfigured()) {
+        supabaseSignUp({
+          email,
+          password: 'google_session_' + Date.now(),
+          name,
+          educationLevel: formData.educationLevel,
+          schoolName: formData.schoolName,
+          major: finalMajor,
+          semester: finalSemester,
+        }).catch((e) => console.warn('Supabase device signup:', e));
+      }
+
+      setShowGoogleModal(false);
+      onAuthSuccess(newUser);
+    } catch (err) {
+      setError(err.message || 'Gagal mendaftar dengan akun Google perangkat.');
+    }
+  };
+
+  // Quick Demo Admin Login (Only Tjandra Wilson admin demo; Mahasiswa UI Informatika completely removed)
   const handleQuickLogin = (role) => {
     if (role === 'tjandra') {
       try {
         const user = loginUser('tjandrawilson@mutiarabangsa.sch.id', 'password123', true);
         onAuthSuccess(user);
       } catch {
-        // Register if not found
         const user = registerUser({
           name: 'Tjandra Wilson',
           email: 'tjandrawilson@mutiarabangsa.sch.id',
@@ -196,23 +268,6 @@ export const AuthScreen = ({ isOpen = true, onAuthSuccess }) => {
           schoolName: 'Mutiara Bangsa 2 School',
           major: 'IPA',
           semester: 'Kelas 11',
-          rememberMe: true,
-        });
-        onAuthSuccess(user);
-      }
-    } else {
-      try {
-        const user = loginUser('mahasiswa@campus.ac.id', 'password123', true);
-        onAuthSuccess(user);
-      } catch {
-        const user = registerUser({
-          name: 'Adrian Pratama',
-          email: 'mahasiswa@campus.ac.id',
-          password: 'password123',
-          educationLevel: 'Mahasiswa',
-          schoolName: 'Universitas Indonesia (UI)',
-          major: 'Informatika / Ilmu Komputer / Data Science',
-          semester: 'Semester 4',
           rememberMe: true,
         });
         onAuthSuccess(user);
@@ -570,26 +625,34 @@ export const AuthScreen = ({ isOpen = true, onAuthSuccess }) => {
           {/* Continue with Google */}
           <button
             type="button"
-            onClick={() => handleQuickLogin('tjandra')}
+            onClick={handleGoogleSignIn}
+            disabled={googleLoading}
             style={{
               width: '100%',
-              padding: '9px 14px',
-              border: '1px solid #E2E8F0',
+              padding: '10px 14px',
+              border: '1.5px solid #CBD5E1',
               borderRadius: '10px',
               backgroundColor: '#FFFFFF',
-              color: '#334155',
-              fontSize: '0.84rem',
-              fontWeight: 600,
+              color: '#1E293B',
+              fontSize: '0.86rem',
+              fontWeight: 700,
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'center',
               gap: '10px',
-              cursor: 'pointer',
+              cursor: googleLoading ? 'wait' : 'pointer',
               marginBottom: '16px',
-              transition: 'background-color 150ms ease, border-color 150ms ease',
+              boxShadow: '0 1px 3px rgba(0,0,0,0.06)',
+              transition: 'all 150ms ease',
             }}
-            onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = '#F8FAFC')}
-            onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = '#FFFFFF')}
+            onMouseEnter={(e) => {
+              e.currentTarget.style.backgroundColor = '#F8FAFC';
+              e.currentTarget.style.borderColor = '#94A3B8';
+            }}
+            onMouseLeave={(e) => {
+              e.currentTarget.style.backgroundColor = '#FFFFFF';
+              e.currentTarget.style.borderColor = '#CBD5E1';
+            }}
           >
             <svg width="18" height="18" viewBox="0 0 24 24">
               <path
@@ -609,7 +672,9 @@ export const AuthScreen = ({ isOpen = true, onAuthSuccess }) => {
                 d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z"
               />
             </svg>
-            <span>Continue with Google</span>
+            <span>
+              {googleLoading ? 'Menghubungkan Akun Google...' : 'Lanjutkan dengan Akun Google'}
+            </span>
           </button>
 
           <div
@@ -1000,7 +1065,7 @@ export const AuthScreen = ({ isOpen = true, onAuthSuccess }) => {
           {/* Quick Demo Fast Login Badges */}
           <div style={{ marginTop: '18px', paddingTop: '12px', borderTop: '1px solid #F1F5F9', textAlign: 'center' }}>
             <span style={{ fontSize: '0.7rem', color: '#94A3B8', display: 'block', marginBottom: '6px' }}>
-              Akses Cepat Pengujian (1-Klik):
+              Akses Admin Demo (1-Klik):
             </span>
             <div style={{ display: 'flex', justifyContent: 'center', gap: '8px', flexWrap: 'wrap' }}>
               <button
@@ -1008,35 +1073,191 @@ export const AuthScreen = ({ isOpen = true, onAuthSuccess }) => {
                 onClick={() => handleQuickLogin('tjandra')}
                 className="btn-ghost"
                 style={{
-                  fontSize: '0.72rem',
-                  padding: '4px 10px',
+                  fontSize: '0.74rem',
+                  padding: '5px 14px',
                   backgroundColor: '#EFF6FF',
                   color: '#2563EB',
                   border: '1px solid #BFDBFE',
                   borderRadius: '6px',
+                  fontWeight: 600,
+                  cursor: 'pointer',
                 }}
               >
-                🏫 Tjandra (SMA IPA)
-              </button>
-              <button
-                type="button"
-                onClick={() => handleQuickLogin('mahasiswa')}
-                className="btn-ghost"
-                style={{
-                  fontSize: '0.72rem',
-                  padding: '4px 10px',
-                  backgroundColor: '#F0FDF4',
-                  color: '#15803D',
-                  border: '1px solid #BBF7D0',
-                  borderRadius: '6px',
-                }}
-              >
-                🎓 Mahasiswa (UI Informatika)
+                👑 Demo Admin (Tjandra Wilson)
               </button>
             </div>
           </div>
         </div>
       </div>
+
+      {/* Google Device Account Sign-in / Quick Register Modal */}
+      {showGoogleModal && (
+        <div
+          style={{
+            position: 'fixed',
+            inset: 0,
+            zIndex: 10000,
+            backgroundColor: 'rgba(15, 23, 42, 0.75)',
+            backdropFilter: 'blur(6px)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            padding: '16px',
+          }}
+        >
+          <div
+            style={{
+              maxWidth: '440px',
+              width: '100%',
+              backgroundColor: '#FFFFFF',
+              borderRadius: '20px',
+              padding: '28px',
+              boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.35)',
+              position: 'relative',
+            }}
+          >
+            <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '16px' }}>
+              <div
+                style={{
+                  width: '42px',
+                  height: '42px',
+                  borderRadius: '12px',
+                  backgroundColor: '#EFF6FF',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                }}
+              >
+                <Smartphone size={22} color="#2563EB" />
+              </div>
+              <div>
+                <h3 style={{ margin: 0, fontSize: '1.15rem', fontWeight: 800, color: '#1E293B' }}>
+                  Hubungkan Akun Google Perangkat
+                </h3>
+                <p style={{ margin: '2px 0 0 0', fontSize: '0.78rem', color: '#64748B' }}>
+                  Daftar instan menggunakan akun Google di HP/perangkat Anda
+                </p>
+              </div>
+            </div>
+
+            <form onSubmit={handleGoogleDeviceRegister} style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+              <div>
+                <label style={{ display: 'block', fontSize: '0.78rem', fontWeight: 700, color: '#334155', marginBottom: '5px' }}>
+                  Nama Lengkap Anda *
+                </label>
+                <input
+                  type="text"
+                  required
+                  placeholder="Contoh: Adrian Wilson / Nama Anda"
+                  value={googleDeviceName}
+                  onChange={(e) => setGoogleDeviceName(e.target.value)}
+                  style={{
+                    width: '100%',
+                    padding: '10px 12px',
+                    borderRadius: '8px',
+                    border: '1.5px solid #CBD5E1',
+                    fontSize: '0.86rem',
+                    outline: 'none',
+                  }}
+                />
+              </div>
+
+              <div>
+                <label style={{ display: 'block', fontSize: '0.78rem', fontWeight: 700, color: '#334155', marginBottom: '5px' }}>
+                  Alamat Email Google Perangkat *
+                </label>
+                <input
+                  type="email"
+                  required
+                  placeholder="akun_google_anda@gmail.com"
+                  value={googleDeviceEmail}
+                  onChange={(e) => setGoogleDeviceEmail(e.target.value)}
+                  style={{
+                    width: '100%',
+                    padding: '10px 12px',
+                    borderRadius: '8px',
+                    border: '1.5px solid #CBD5E1',
+                    fontSize: '0.86rem',
+                    outline: 'none',
+                  }}
+                />
+              </div>
+
+              <div style={{ display: 'flex', gap: '10px' }}>
+                <div style={{ flex: 1 }}>
+                  <label style={{ display: 'block', fontSize: '0.78rem', fontWeight: 700, color: '#334155', marginBottom: '5px' }}>
+                    Jenjang
+                  </label>
+                  <select
+                    value={formData.educationLevel}
+                    onChange={(e) => setFormData({ ...formData, educationLevel: e.target.value })}
+                    style={{
+                      width: '100%',
+                      padding: '9px 10px',
+                      borderRadius: '8px',
+                      border: '1.5px solid #CBD5E1',
+                      fontSize: '0.82rem',
+                    }}
+                  >
+                    <option value="Siswa SMA/SMK">Siswa SMA/SMK</option>
+                    <option value="Mahasiswa">Mahasiswa</option>
+                  </select>
+                </div>
+                <div style={{ flex: 1 }}>
+                  <label style={{ display: 'block', fontSize: '0.78rem', fontWeight: 700, color: '#334155', marginBottom: '5px' }}>
+                    Jurusan / Minat
+                  </label>
+                  <input
+                    type="text"
+                    value={formData.educationLevel === 'Siswa SMA/SMK' ? formData.majorSMA : formData.collegeMajor}
+                    onChange={(e) => {
+                      if (formData.educationLevel === 'Siswa SMA/SMK') {
+                        setFormData({ ...formData, majorSMA: e.target.value });
+                      } else {
+                        setFormData({ ...formData, collegeMajor: e.target.value });
+                      }
+                    }}
+                    placeholder="Contoh: IPA"
+                    style={{
+                      width: '100%',
+                      padding: '9px 10px',
+                      borderRadius: '8px',
+                      border: '1.5px solid #CBD5E1',
+                      fontSize: '0.82rem',
+                    }}
+                  />
+                </div>
+              </div>
+
+              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px', marginTop: '10px' }}>
+                <button
+                  type="button"
+                  onClick={() => setShowGoogleModal(false)}
+                  className="btn-secondary"
+                  style={{ padding: '9px 16px', fontSize: '0.84rem' }}
+                >
+                  Batal
+                </button>
+                <button
+                  type="submit"
+                  style={{
+                    padding: '9px 20px',
+                    borderRadius: '8px',
+                    border: 'none',
+                    backgroundColor: '#2563EB',
+                    color: '#FFFFFF',
+                    fontWeight: 700,
+                    fontSize: '0.84rem',
+                    cursor: 'pointer',
+                  }}
+                >
+                  Daftar & Masuk Sekarang
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
 
       {/* Outside Footer Copyright */}
       <div

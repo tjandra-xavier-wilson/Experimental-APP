@@ -24,9 +24,15 @@ import {
   subscribeToCloudChanges,
   CANONICAL_USER_ID,
   resetAllTasksStatus,
+  setSession,
+  registerOrUpdateUserLocal,
 } from './services/storage';
-import { isSupabaseConfigured } from './services/supabaseClient';
-import { upsertSupabaseProfile } from './services/supabaseService';
+import { getSupabase, isSupabaseConfigured } from './services/supabaseClient';
+import {
+  upsertSupabaseProfile,
+  getSupabaseProfile,
+  supabaseSignOut,
+} from './services/supabaseService';
 import { requestNotificationPermission, triggerReminderAlert } from './services/notificationService';
 import { Sidebar } from './components/Sidebar';
 import { Navbar } from './components/Navbar';
@@ -164,15 +170,67 @@ export function App() {
   // 1. Initial Session & Supabase Cloud Sync
   useEffect(() => {
     let unsubscribe = null;
+    let authListener = null;
 
     const init = async () => {
-      const session = getCurrentSession();
-      const user = session?.user || ensureDefaultUser();
-      loadUserData(user, true); // load local cache first for instant UI response
+      // 1. Check Supabase OAuth Session (e.g. Google Sign-In redirect or stored session)
+      let supaUser = null;
+      if (isSupabaseConfigured()) {
+        try {
+          const client = getSupabase();
+          if (client) {
+            const { data: supaSessionData } = await client.auth.getSession();
+            if (supaSessionData?.session?.user) {
+              supaUser = supaSessionData.session.user;
+            }
+          }
+        } catch (e) {
+          console.warn('Supabase auth session check:', e);
+        }
+      }
+
+      let activeUser = null;
+
+      if (supaUser) {
+        let profile = await getSupabaseProfile(supaUser.id);
+        if (!profile) {
+          const meta = supaUser.user_metadata || {};
+          profile = {
+            id: supaUser.id,
+            email: supaUser.email,
+            name: meta.full_name || meta.name || supaUser.email?.split('@')[0] || 'Pengguna Google',
+            educationLevel: meta.education_level || 'Siswa SMA/SMK',
+            schoolName: meta.school_name || 'Mutiara Bangsa 2 School',
+            major: meta.major || 'IPA',
+            semester: meta.semester || 'Kelas 11',
+            studyPreference: 'balanced',
+            avatarBg: '#8E94F2',
+            status: 'Sedang Belajar 📚',
+            bio: 'Fokus belajar dan konsisten setiap hari!',
+            target: 'Nilai Unggul',
+          };
+          await upsertSupabaseProfile(profile);
+        }
+        activeUser = registerOrUpdateUserLocal(profile);
+        setSession(activeUser, true);
+      } else {
+        const session = getCurrentSession();
+        if (session?.user) {
+          activeUser = session.user;
+        }
+      }
+
+      if (!activeUser) {
+        // No session exists on this device! DO NOT auto-log in as Tjandra Wilson!
+        setCurrentUser(null);
+        return;
+      }
+
+      loadUserData(activeUser, true); // load local cache first for instant UI response
 
       // Fetch fresh data from Supabase Cloud once
       try {
-        const cloudData = await fetchCloudUserData(user.id);
+        const cloudData = await fetchCloudUserData(activeUser.id);
         if (cloudData) {
           if (Array.isArray(cloudData.tasks)) setTasks(cloudData.tasks);
           if (Array.isArray(cloudData.schedules)) setSchedules(cloudData.schedules);
@@ -189,7 +247,7 @@ export function App() {
 
       // Realtime subscription with resilient smart fallback for cross-device updates (Laptop <-> HP)
       unsubscribe = subscribeToCloudChanges(
-        user.id,
+        activeUser.id,
         (freshTasks, freshBundle) => {
           if (freshBundle) {
             if (Array.isArray(freshBundle.tasks)) setTasks(freshBundle.tasks);
@@ -212,11 +270,49 @@ export function App() {
 
     init();
 
+    // Listen to Supabase auth events (e.g. Google OAuth redirect completion)
+    if (isSupabaseConfigured()) {
+      try {
+        const client = getSupabase();
+        if (client) {
+          const { data: { subscription } } = client.auth.onAuthStateChange(async (event, session) => {
+            if (event === 'SIGNED_IN' && session?.user) {
+              const u = session.user;
+              let profile = await getSupabaseProfile(u.id);
+              if (!profile) {
+                const meta = u.user_metadata || {};
+                profile = {
+                  id: u.id,
+                  email: u.email,
+                  name: meta.full_name || meta.name || u.email?.split('@')[0] || 'Pengguna Google',
+                  educationLevel: meta.education_level || 'Siswa SMA/SMK',
+                  schoolName: meta.school_name || 'Mutiara Bangsa 2 School',
+                  major: meta.major || 'IPA',
+                  semester: meta.semester || 'Kelas 11',
+                  studyPreference: 'balanced',
+                  avatarBg: '#8E94F2',
+                  status: 'Sedang Belajar 📚',
+                  bio: 'Fokus belajar dan konsisten setiap hari!',
+                  target: 'Nilai Unggul',
+                };
+                await upsertSupabaseProfile(profile);
+              }
+              const localUser = registerOrUpdateUserLocal(profile);
+              setSession(localUser, true);
+              loadUserData(localUser);
+            }
+          });
+          authListener = subscription;
+        }
+      } catch (e) {}
+    }
+
     // Ask for browser notification permission gently
     requestNotificationPermission();
 
     return () => {
       if (unsubscribe) unsubscribe();
+      if (authListener) authListener.unsubscribe();
     };
   }, []);
 
@@ -280,7 +376,10 @@ export function App() {
     );
   };
 
-  const handleLogout = () => {
+  const handleLogout = async () => {
+    try {
+      await supabaseSignOut();
+    } catch (e) {}
     logoutUser();
     setCurrentUser(null);
     setTasks([]);

@@ -9,6 +9,7 @@ import {
   deleteCourseFromSupabase,
   syncFriendsToSupabase,
   deleteFriendFromSupabase,
+  addFriendToSupabase,
   syncNotesToSupabase,
   deleteNoteFromSupabase,
   upsertSupabaseProfile,
@@ -351,7 +352,7 @@ export const noteFromSupabase = (row) => ({
 // ==========================================
 
 export const fetchCloudUserData = async (userId) => {
-  const targetUserId = CANONICAL_USER_ID;
+  const targetUserId = userId || CANONICAL_USER_ID;
   try {
     const [
       { data: tasksData, error: tasksErr },
@@ -506,7 +507,7 @@ export const pullDataFromSupabase = async (userId) => {
 };
 
 export const subscribeToCloudChanges = (userId, onTasksChange, onStatusChange) => {
-  const targetUserId = CANONICAL_USER_ID;
+  const targetUserId = userId || CANONICAL_USER_ID;
   let isSubscribed = false;
   let pollingInterval = null;
   let channel = null;
@@ -717,8 +718,8 @@ export const loginUser = (email, password, rememberMe = true) => {
       u.email.toLowerCase() === email.trim().toLowerCase() && u.passwordHash === password
   );
 
-  // If logging in as default user and not yet in localStorage, create it
-  if (!user && (email.trim().toLowerCase() === 'tjandrawilson@mutiarabangsa.sch.id' || users.length === 0)) {
+  // Only create default user if explicitly attempting to login with default admin email
+  if (!user && email.trim().toLowerCase() === 'tjandrawilson@mutiarabangsa.sch.id') {
     user = ensureDefaultUser();
   }
 
@@ -728,6 +729,41 @@ export const loginUser = (email, password, rememberMe = true) => {
 
   setSession(user, rememberMe);
   return user;
+};
+
+export const registerOrUpdateUserLocal = (profile) => {
+  if (!profile) return null;
+  const users = getStoredUsers();
+  const existingIdx = users.findIndex(
+    (u) => u.id === profile.id || (profile.email && u.email?.toLowerCase() === profile.email?.toLowerCase())
+  );
+
+  const mergedUser = {
+    id: profile.id,
+    name: profile.name || 'Pengguna',
+    email: profile.email || '',
+    passwordHash: profile.passwordHash || 'google_oauth_session',
+    educationLevel: profile.educationLevel || profile.education_level || 'Siswa SMA/SMK',
+    schoolName: profile.schoolName || profile.school_name || 'Mutiara Bangsa 2 School',
+    major: profile.major || 'IPA',
+    semester: profile.semester || 'Kelas 11',
+    studyPreference: profile.studyPreference || 'balanced',
+    avatarBg: profile.avatarBg || '#8E94F2',
+    status: profile.status || 'Sedang Belajar 📚',
+    bio: profile.bio || 'Fokus target nilai 95+ dan konsisten belajar setiap hari!',
+    target: profile.target || 'UTBK & Nilai Rapor Unggul',
+    updatedAt: new Date().toISOString(),
+  };
+
+  if (existingIdx >= 0) {
+    users[existingIdx] = { ...users[existingIdx], ...mergedUser };
+  } else {
+    users.push(mergedUser);
+    initStarterData(mergedUser);
+  }
+
+  saveUsers(users);
+  return mergedUser;
 };
 
 export const ensureDefaultUser = () => {
@@ -828,11 +864,9 @@ const initStarterData = (user) => {
 // ==========================================
 
 export const getUserData = (userId) => {
-  const targetId = CANONICAL_USER_ID;
+  const targetId = userId || CANONICAL_USER_ID;
   try {
-    const raw =
-      safeLocalStorage.getItem(`${STORAGE_KEYS.DATA_PREFIX}${userId}`) ||
-      (targetId && targetId !== userId ? safeLocalStorage.getItem(`${STORAGE_KEYS.DATA_PREFIX}${targetId}`) : null);
+    const raw = safeLocalStorage.getItem(`${STORAGE_KEYS.DATA_PREFIX}${targetId}`);
     if (!raw) return null;
     const parsed = JSON.parse(raw);
     const deletedIds = getDeletedIds();
@@ -859,10 +893,7 @@ export const getUserData = (userId) => {
     if (parsed.friends) parsed.friends = sanitize(parsed.friends);
 
     if (modified) {
-      safeLocalStorage.setItem(`${STORAGE_KEYS.DATA_PREFIX}${userId}`, JSON.stringify(parsed));
-      if (targetId && targetId !== userId) {
-        safeLocalStorage.setItem(`${STORAGE_KEYS.DATA_PREFIX}${targetId}`, JSON.stringify(parsed));
-      }
+      safeLocalStorage.setItem(`${STORAGE_KEYS.DATA_PREFIX}${targetId}`, JSON.stringify(parsed));
     }
 
     return parsed;
@@ -873,7 +904,8 @@ export const getUserData = (userId) => {
 };
 
 export const saveUserData = (userId, data) => {
-  safeLocalStorage.setItem(`${STORAGE_KEYS.DATA_PREFIX}${userId}`, JSON.stringify(data));
+  const targetId = userId || CANONICAL_USER_ID;
+  safeLocalStorage.setItem(`${STORAGE_KEYS.DATA_PREFIX}${targetId}`, JSON.stringify(data));
 };
 
 // ==========================================
@@ -886,8 +918,8 @@ export const getTasks = (userId) => {
 };
 
 export const saveTask = (userId, task) => {
-  const targetId = CANONICAL_USER_ID;
-  const data = getUserData(targetId) || (userId ? getUserData(userId) : null) || { tasks: [] };
+  const targetId = userId || CANONICAL_USER_ID;
+  const data = getUserData(targetId) || { tasks: [] };
   if (!data.tasks) data.tasks = [];
 
   const taskId = task.id || generateId('tsk');
@@ -905,9 +937,6 @@ export const saveTask = (userId, task) => {
     data.tasks.unshift(fullTask);
   }
   saveUserData(targetId, data);
-  if (userId && userId !== targetId) {
-    saveUserData(userId, data);
-  }
 
   // Background sync to Supabase
   if (isSupabaseConfigured()) {
@@ -920,9 +949,9 @@ export const saveTask = (userId, task) => {
 };
 
 export const deleteTask = async (userId, taskId) => {
-  const targetId = CANONICAL_USER_ID;
+  const targetId = userId || CANONICAL_USER_ID;
   addDeletedId(taskId);
-  const data = getUserData(targetId) || (userId ? getUserData(userId) : null);
+  const data = getUserData(targetId);
   if (data && data.tasks) {
     const targetTask = data.tasks.find((t) => t.id === taskId);
     if (targetTask) {
@@ -930,9 +959,6 @@ export const deleteTask = async (userId, taskId) => {
     }
     data.tasks = data.tasks.filter((t) => t.id !== taskId);
     saveUserData(targetId, data);
-    if (userId && userId !== targetId) {
-      saveUserData(userId, data);
-    }
   }
 
   // Background sync to Supabase with error catching
@@ -948,8 +974,8 @@ export const deleteTask = async (userId, taskId) => {
 };
 
 export const toggleTaskStatus = (userId, taskId) => {
-  const targetId = CANONICAL_USER_ID;
-  const data = getUserData(targetId) || (userId ? getUserData(userId) : null);
+  const targetId = userId || CANONICAL_USER_ID;
+  const data = getUserData(targetId);
   if (!data || !data.tasks) return [];
 
   let targetTask = null;
@@ -967,9 +993,6 @@ export const toggleTaskStatus = (userId, taskId) => {
     return t;
   });
   saveUserData(targetId, data);
-  if (userId && userId !== targetId) {
-    saveUserData(userId, data);
-  }
 
   // Background sync to Supabase
   if (isSupabaseConfigured() && targetTask) {
@@ -982,8 +1005,8 @@ export const toggleTaskStatus = (userId, taskId) => {
 };
 
 export const resetAllTasksStatus = async (userId) => {
-  const targetId = CANONICAL_USER_ID;
-  const data = getUserData(targetId) || (userId ? getUserData(userId) : null);
+  const targetId = userId || CANONICAL_USER_ID;
+  const data = getUserData(targetId);
   if (!data || !data.tasks) return [];
 
   data.tasks = data.tasks.map((t) => ({
@@ -994,9 +1017,6 @@ export const resetAllTasksStatus = async (userId) => {
   }));
 
   saveUserData(targetId, data);
-  if (userId && userId !== targetId) {
-    saveUserData(userId, data);
-  }
 
   // Sync to Supabase in background
   if (isSupabaseConfigured() && Array.isArray(data.tasks)) {
@@ -1015,13 +1035,14 @@ export const resetAllTasksStatus = async (userId) => {
 // ==========================================
 
 export const getSchedules = (userId) => {
-  const data = getUserData(userId);
+  const targetId = userId || CANONICAL_USER_ID;
+  const data = getUserData(targetId);
   return data?.schedules || [];
 };
 
 export const saveSchedule = (userId, schedule) => {
-  const targetId = CANONICAL_USER_ID;
-  const data = getUserData(targetId) || (userId ? getUserData(userId) : null) || { schedules: [] };
+  const targetId = userId || CANONICAL_USER_ID;
+  const data = getUserData(targetId) || { schedules: [] };
   if (!data.schedules) data.schedules = [];
 
   const schId = schedule.id || generateId('sch');
@@ -1034,9 +1055,6 @@ export const saveSchedule = (userId, schedule) => {
     data.schedules.push(fullSch);
   }
   saveUserData(targetId, data);
-  if (userId && userId !== targetId) {
-    saveUserData(userId, data);
-  }
 
   // Background sync to Supabase
   if (isSupabaseConfigured()) {
@@ -1049,9 +1067,9 @@ export const saveSchedule = (userId, schedule) => {
 };
 
 export const deleteSchedule = async (userId, scheduleId) => {
-  const targetId = CANONICAL_USER_ID;
+  const targetId = userId || CANONICAL_USER_ID;
   addDeletedId(scheduleId);
-  const data = getUserData(targetId) || (userId ? getUserData(userId) : null);
+  const data = getUserData(targetId);
   if (data && data.schedules) {
     const targetSchedule = data.schedules.find((s) => s.id === scheduleId);
     if (targetSchedule) {
@@ -1059,9 +1077,6 @@ export const deleteSchedule = async (userId, scheduleId) => {
     }
     data.schedules = data.schedules.filter((s) => s.id !== scheduleId);
     saveUserData(targetId, data);
-    if (userId && userId !== targetId) {
-      saveUserData(userId, data);
-    }
   }
 
   if (isSupabaseConfigured() && scheduleId) {
@@ -1085,13 +1100,14 @@ export const getCategories = (userId) => {
 };
 
 export const getCourses = (userId) => {
-  const data = getUserData(userId);
+  const targetId = userId || CANONICAL_USER_ID;
+  const data = getUserData(targetId);
   return data?.courses || [];
 };
 
 export const saveCourse = (userId, course) => {
-  const targetId = CANONICAL_USER_ID;
-  const data = getUserData(targetId) || (userId ? getUserData(userId) : null) || { courses: [] };
+  const targetId = userId || CANONICAL_USER_ID;
+  const data = getUserData(targetId) || { courses: [] };
   if (!data.courses) data.courses = [];
 
   const crsId = course.id || generateId('crs');
@@ -1104,9 +1120,6 @@ export const saveCourse = (userId, course) => {
     data.courses.push(fullCrs);
   }
   saveUserData(targetId, data);
-  if (userId && userId !== targetId) {
-    saveUserData(userId, data);
-  }
 
   if (isSupabaseConfigured()) {
     syncCourseToSupabase(targetId, fullCrs).catch((e) =>
@@ -1118,15 +1131,12 @@ export const saveCourse = (userId, course) => {
 };
 
 export const deleteCourse = (userId, courseId) => {
-  const targetId = CANONICAL_USER_ID;
+  const targetId = userId || CANONICAL_USER_ID;
   addDeletedId(courseId);
-  const data = getUserData(targetId) || (userId ? getUserData(userId) : null);
+  const data = getUserData(targetId);
   if (data && data.courses) {
     data.courses = data.courses.filter((c) => c.id !== courseId);
     saveUserData(targetId, data);
-    if (userId && userId !== targetId) {
-      saveUserData(userId, data);
-    }
   }
 
   if (isSupabaseConfigured() && courseId) {
@@ -1145,19 +1155,16 @@ export const deleteCourse = (userId, courseId) => {
 export const DEFAULT_FRIENDS = [];
 
 export const getFriends = (userId) => {
-  const targetId = CANONICAL_USER_ID;
-  const data = getUserData(targetId) || (userId ? getUserData(userId) : null);
+  const targetId = userId || CANONICAL_USER_ID;
+  const data = getUserData(targetId);
   return data?.friends || [];
 };
 
 export const saveFriends = (userId, friends) => {
-  const targetId = CANONICAL_USER_ID;
-  const data = getUserData(targetId) || (userId ? getUserData(userId) : {}) || {};
+  const targetId = userId || CANONICAL_USER_ID;
+  const data = getUserData(targetId) || {};
   data.friends = friends;
   saveUserData(targetId, data);
-  if (userId && userId !== targetId) {
-    saveUserData(userId, data);
-  }
 
   if (isSupabaseConfigured()) {
     syncFriendsToSupabase(targetId, friends).catch((e) =>
@@ -1169,15 +1176,12 @@ export const saveFriends = (userId, friends) => {
 };
 
 export const deleteFriend = (userId, friendId) => {
-  const targetId = CANONICAL_USER_ID;
+  const targetId = userId || CANONICAL_USER_ID;
   addDeletedId(friendId);
-  const data = getUserData(targetId) || (userId ? getUserData(userId) : null);
+  const data = getUserData(targetId);
   if (data && data.friends) {
     data.friends = data.friends.filter((f) => f.id !== friendId);
     saveUserData(targetId, data);
-    if (userId && userId !== targetId) {
-      saveUserData(userId, data);
-    }
   }
 
   if (isSupabaseConfigured() && friendId) {
@@ -1190,8 +1194,10 @@ export const deleteFriend = (userId, friendId) => {
 };
 
 export const addFriend = (userId, friendData) => {
-  const current = getFriends(userId);
+  const targetId = userId || CANONICAL_USER_ID;
+  const current = getFriends(targetId);
   const initials =
+    friendData.initials ||
     friendData.name
       .split(' ')
       .filter(Boolean)
@@ -1200,26 +1206,33 @@ export const addFriend = (userId, friendData) => {
       .join('') || 'FR';
 
   const newFriend = {
-    id: generateId('frd'),
-    userId: CANONICAL_USER_ID,
+    id: friendData.id || generateId('frd'),
+    userId: targetId,
     name: friendData.name.trim(),
     initials,
     avatarBg: friendData.avatarBg || '#8B5CF6',
     major: friendData.major?.trim() || 'IPA',
     semester: friendData.semester?.trim() || 'Kelas 11',
-    progress: Number(friendData.progress) || 40,
-    completedTasks: Number(friendData.completedTasks) || 2,
-    totalTasks: Number(friendData.totalTasks) || 5,
+    progress: Number(friendData.progress) || 0,
+    completedTasks: Number(friendData.completedTasks) || 0,
+    totalTasks: Number(friendData.totalTasks) || 0,
     status: friendData.status || 'Sedang Belajar 📚',
-    nearestTask: {
-      title: friendData.nearestTaskTitle || 'Tugas Studi Kasus',
+    nearestTask: friendData.nearestTask || {
+      title: friendData.nearestTaskTitle || 'Tugas Mandiri',
       due: friendData.nearestTaskDue || 'Malam ini, 23:59 WIB',
       course: friendData.nearestTaskCourse || 'Kuliah Utama',
     },
   };
 
-  const updated = [newFriend, ...current];
-  saveFriends(userId, updated);
+  const updated = [newFriend, ...current.filter((f) => f.id !== newFriend.id && f.name !== newFriend.name)];
+  saveFriends(targetId, updated);
+
+  if (isSupabaseConfigured()) {
+    addFriendToSupabase(targetId, newFriend).catch((e) =>
+      console.warn('Supabase add friend sync warning:', e)
+    );
+  }
+
   return updated;
 };
 

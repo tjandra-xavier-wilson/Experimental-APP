@@ -84,6 +84,28 @@ export const getSupabaseSession = async () => {
   return data.session;
 };
 
+export const signInWithGoogleOAuth = async () => {
+  const client = getSupabase();
+  if (!client) throw new Error('Supabase client belum dikonfigurasi.');
+  const redirectTo = typeof window !== 'undefined'
+    ? `${window.location.origin}${window.location.pathname}`
+    : 'https://experimental-app-two.vercel.app/';
+
+  const { data, error } = await client.auth.signInWithOAuth({
+    provider: 'google',
+    options: {
+      redirectTo,
+      queryParams: {
+        access_type: 'offline',
+        prompt: 'consent',
+      },
+    },
+  });
+
+  if (error) throw error;
+  return data;
+};
+
 /**
  * ==========================================================
  * SUPABASE PROFILES
@@ -187,8 +209,8 @@ export const fetchAllUserDataFromSupabase = async (userId) => {
       client.from('notes').select('*').eq('user_id', userId),
     ]);
 
-    // Fallback: if data is empty for this specific session id, pull from demo cloud target
-    if ((tasksRes.data || []).length === 0 && (schedulesRes.data || []).length === 0) {
+    // Fallback: only if admin demo profile has empty data, pull from demo cloud target
+    if (userId === 'user-tjandra-wilson-live' && (tasksRes.data || []).length === 0 && (schedulesRes.data || []).length === 0) {
       const fallbackTarget = 'user-tjandra-wilson-live';
       const [fTasks, fSchedules, fCourses, fFriends, fNotes] = await Promise.all([
         client.from('tasks').select('*').eq('user_id', fallbackTarget),
@@ -274,6 +296,113 @@ export const fetchAllUserDataFromSupabase = async (userId) => {
 
 /**
  * ==========================================================
+ * REGISTERED USERS SEARCH & REALTIME FRIEND NETWORK
+ * ==========================================================
+ */
+
+export const fetchRegisteredProfiles = async (excludeUserId = null) => {
+  const client = getSupabase();
+  if (!client) return [];
+
+  try {
+    let query = client
+      .from('profiles')
+      .select('*')
+      .order('name', { ascending: true });
+
+    if (excludeUserId) {
+      query = query.neq('id', excludeUserId);
+    }
+
+    const { data, error } = await query;
+    if (error) {
+      console.warn('Error fetching registered profiles:', error.message);
+      return [];
+    }
+
+    return (data || []).map((p) => {
+      let parsedPref = { avatarBg: '#8E94F2', status: 'Sedang Belajar 📚' };
+      if (p.study_preference) {
+        try {
+          if (p.study_preference.startsWith('{')) {
+            parsedPref = { ...parsedPref, ...JSON.parse(p.study_preference) };
+          }
+        } catch (e) {}
+      }
+      return {
+        id: p.id,
+        name: p.name,
+        email: p.email,
+        educationLevel: p.education_level || 'Siswa SMA/SMK',
+        schoolName: p.school_name || 'Mutiara Bangsa 2 School',
+        major: p.major || 'IPA',
+        semester: p.semester || 'Kelas 11',
+        avatarBg: parsedPref.avatarBg || '#8E94F2',
+        status: parsedPref.status || 'Sedang Belajar 📚',
+        bio: parsedPref.bio || '',
+        target: parsedPref.target || '',
+        createdAt: p.created_at,
+      };
+    });
+  } catch (err) {
+    console.warn('Supabase registered profiles query failed:', err);
+    return [];
+  }
+};
+
+export const searchRegisteredProfiles = async (queryText, excludeUserId = null) => {
+  const client = getSupabase();
+  if (!client || !queryText?.trim()) return [];
+
+  const clean = queryText.trim().toLowerCase();
+  const all = await fetchRegisteredProfiles(excludeUserId);
+  return all.filter(
+    (p) =>
+      p.name?.toLowerCase().includes(clean) ||
+      p.email?.toLowerCase().includes(clean) ||
+      p.schoolName?.toLowerCase().includes(clean)
+  );
+};
+
+export const addFriendToSupabase = async (userId, friend) => {
+  const client = getSupabase();
+  if (!client || !friend) return null;
+
+  const initials =
+    friend.initials ||
+    (friend.name || '')
+      .split(' ')
+      .filter(Boolean)
+      .map((w) => w[0].toUpperCase())
+      .slice(0, 2)
+      .join('') || 'FR';
+
+  const payload = {
+    id: friend.id || `frd-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
+    user_id: userId || CANONICAL_USER_ID,
+    name: friend.name,
+    initials,
+    avatar_bg: friend.avatarBg || '#8E94F2',
+    major: friend.major || 'IPA',
+    semester: friend.semester || 'Kelas 11',
+    progress: Number(friend.progress) || 0,
+    completed_tasks: Number(friend.completedTasks) || 0,
+    total_tasks: Number(friend.totalTasks) || 0,
+    status: friend.status || 'Sedang Belajar 📚',
+    nearest_task: friend.nearestTask || null,
+    created_at: friend.createdAt || new Date().toISOString(),
+  };
+
+  const { data, error } = await client.from('friends').upsert(payload).select().single();
+  if (error) {
+    console.error('Error inserting friend to Supabase:', error);
+    throw error;
+  }
+  return data;
+};
+
+/**
+ * ==========================================================
  * INDIVIDUAL ENTITY SYNCING (BACKGROUND / ASYNC)
  * ==========================================================
  */
@@ -286,7 +415,7 @@ export const syncTaskToSupabase = async (userId, task) => {
 
   const payload = {
     id: task.id,
-    user_id: CANONICAL_USER_ID,
+    user_id: userId || CANONICAL_USER_ID,
     title: task.title,
     course_id: task.courseId || null,
     course_name: task.courseName || '',
@@ -322,7 +451,7 @@ export const syncScheduleToSupabase = async (userId, schedule) => {
 
   const payload = {
     id: schedule.id,
-    user_id: CANONICAL_USER_ID,
+    user_id: userId || CANONICAL_USER_ID,
     course_id: schedule.courseId || null,
     course_name: schedule.courseName || '',
     day_of_week: Number(schedule.dayOfWeek),
@@ -351,7 +480,7 @@ export const syncCourseToSupabase = async (userId, course) => {
 
   const payload = {
     id: course.id,
-    user_id: CANONICAL_USER_ID,
+    user_id: userId || CANONICAL_USER_ID,
     name: course.name,
     code: course.code || '',
     lecturer: course.lecturer || '',
@@ -378,7 +507,7 @@ export const syncFriendsToSupabase = async (userId, friends) => {
   for (const f of friends) {
     const payload = {
       id: f.id,
-      user_id: CANONICAL_USER_ID,
+      user_id: userId || CANONICAL_USER_ID,
       name: f.name,
       initials: f.initials || 'FR',
       avatar_bg: f.avatarBg || '#8E94F2',
@@ -408,7 +537,7 @@ export const syncNotesToSupabase = async (userId, notes) => {
   for (const n of notes) {
     const payload = {
       id: n.id,
-      user_id: CANONICAL_USER_ID,
+      user_id: userId || CANONICAL_USER_ID,
       title: n.title || '',
       content: n.content || '',
       date: n.date || new Date().toISOString(),
