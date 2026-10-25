@@ -1,5 +1,5 @@
 // src/components/Views/ProductivityView.jsx
-import React, { useState } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   TrendingUp,
   Clock,
@@ -14,6 +14,10 @@ import {
   BookOpen,
   ArrowUpRight,
   Filter,
+  RotateCcw,
+  AlertTriangle,
+  X,
+  Check,
 } from 'lucide-react';
 
 export const ProductivityView = ({
@@ -22,38 +26,150 @@ export const ProductivityView = ({
   user,
   onOpenTaskModal,
   onOpenAIRecommender,
+  onResetTasksStatus,
 }) => {
-  const [timeframe, setTimeframe] = useState('daily'); // 'daily' | 'weekly'
+  const [timeframe, setTimeframe] = useState('weekly'); // 'weekly' | 'daily'
   const [chartType, setChartType] = useState('line'); // 'line' | 'bar'
   const [hoveredIndex, setHoveredIndex] = useState(null);
 
+  // Streak state stored in localStorage (defaults to 0 on initial/reset)
+  const [streak, setStreak] = useState(() => {
+    try {
+      const val = localStorage.getItem('studycal_study_streak_v1');
+      return val !== null ? Math.max(0, parseInt(val, 10)) : 0;
+    } catch {
+      return 0;
+    }
+  });
+
+  const [streakRecord, setStreakRecord] = useState(() => {
+    try {
+      const val = localStorage.getItem('studycal_streak_record_v1');
+      return val !== null ? Math.max(0, parseInt(val, 10)) : 0;
+    } catch {
+      return 0;
+    }
+  });
+
+  // Modal and toast states for Reset dari Awal
+  const [isResetModalOpen, setIsResetModalOpen] = useState(false);
+  const [resetTasksCheck, setResetTasksCheck] = useState(false);
+  const [showToast, setShowToast] = useState(false);
+  const confirmBtnRef = useRef(null);
+
+  // Handle keyboard Enter & Escape for Reset Modal
+  useEffect(() => {
+    if (!isResetModalOpen) return;
+
+    const timer = setTimeout(() => {
+      confirmBtnRef.current?.focus();
+    }, 50);
+
+    const handleKeyDown = (e) => {
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        setIsResetModalOpen(false);
+      } else if (e.key === 'Enter') {
+        e.preventDefault();
+        executeReset();
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => {
+      clearTimeout(timer);
+      window.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [isResetModalOpen, resetTasksCheck]);
+
+  // Real calculations derived from actual task data
   const completedTasks = tasks.filter((t) => t.isCompleted);
   const completedCount = completedTasks.length;
   const totalCount = tasks.length;
   const completionRate = totalCount > 0 ? Math.round((completedCount / totalCount) * 100) : 0;
 
-  // Data series for Harian & Mingguan
-  const dailyData = [
-    { label: '08:00', value: 1.2, tasks: 1, score: 85, focusDesc: 'Sesi Pagi (Matematika)' },
-    { label: '10:00', value: 2.0, tasks: 2, score: 92, focusDesc: 'Fokus Kuliah / Kelas' },
-    { label: '13:00', value: 0.8, tasks: 0, score: 78, focusDesc: 'Istirahat & Review Singkat' },
-    { label: '15:00', value: 1.5, tasks: 1, score: 88, focusDesc: 'Pengerjaan Laporan' },
-    { label: '19:00', value: 2.4, tasks: completedCount > 0 ? Math.min(completedCount, 3) : 1, score: 95, focusDesc: 'Puncak Produktivitas Malam 🔥' },
-    { label: '21:00', value: 1.1, tasks: completedCount, score: 89, focusDesc: 'Review & Persiapan Esok' },
-  ];
+  // Real duration in hours computed from completed tasks (estimatedMinutes)
+  const totalDurationHours = completedTasks.reduce((acc, t) => {
+    const mins = Number(t.estimatedMinutes) || 45;
+    return acc + mins / 60;
+  }, 0);
+  const totalDurationStr = totalDurationHours.toFixed(1);
+  const weeklyTargetHours = 20;
+  const targetProgressPct = Math.min(100, Math.round((totalDurationHours / weeklyTargetHours) * 100));
 
+  // Focus score starts from 0 if no tasks are completed
+  const avgFocusScore =
+    completedCount > 0
+      ? Math.min(100, Math.max(50, Math.round(completionRate * 0.75 + (totalDurationHours > 0 ? 25 : 10))))
+      : 0;
+
+  // Real Weekly Data series (Senin s/d Minggu)
   const weeklyData = [
-    { label: 'Senin', value: 3.5, tasks: 2, score: 88, focusDesc: 'Awal pekan produktif' },
-    { label: 'Selasa', value: 4.8, tasks: 4, score: 92, focusDesc: 'Target terselesaikan maksimal' },
-    { label: 'Rabu', value: 2.6, tasks: 1, score: 80, focusDesc: 'Fokus kelas teori' },
-    { label: 'Kamis', value: 5.2, tasks: 5, score: 95, focusDesc: 'Performa puncak pekan ini 🔥' },
-    { label: 'Jumat', value: 3.9, tasks: 3, score: 89, focusDesc: 'Finishing tugas mingguan' },
-    { label: 'Sabtu', value: 4.1, tasks: 3, score: 91, focusDesc: 'Studi mandiri & proyek' },
-    { label: 'Minggu', value: 2.0, tasks: 1, score: 85, focusDesc: 'Review santai & self-care' },
-  ];
+    { label: 'Senin', short: 'Sen', dayId: 1 },
+    { label: 'Selasa', short: 'Sel', dayId: 2 },
+    { label: 'Rabu', short: 'Rab', dayId: 3 },
+    { label: 'Kamis', short: 'Kam', dayId: 4 },
+    { label: 'Jumat', short: 'Jum', dayId: 5 },
+    { label: 'Sabtu', short: 'Sab', dayId: 6 },
+    { label: 'Minggu', short: 'Min', dayId: 0 },
+  ].map((day) => {
+    const matchingTasks = completedTasks.filter((t) => {
+      if (t.completedAt) {
+        return new Date(t.completedAt).getDay() === day.dayId;
+      }
+      if (t.dueDate) {
+        return new Date(t.dueDate + 'T00:00:00').getDay() === day.dayId;
+      }
+      return false;
+    });
+
+    const hours = matchingTasks.reduce((sum, t) => sum + (Number(t.estimatedMinutes) || 45) / 60, 0);
+    return {
+      label: day.label,
+      short: day.short,
+      value: Number(hours.toFixed(1)),
+      tasks: matchingTasks.length,
+      score: matchingTasks.length > 0 ? Math.min(100, 75 + matchingTasks.length * 8) : 0,
+      focusDesc: matchingTasks.length > 0 ? `${matchingTasks.length} tugas tuntas` : 'Belum ada aktivitas',
+    };
+  });
+
+  // Real Daily Data series (Intervals today)
+  const todayStr = new Date().toISOString().split('T')[0];
+  const todayCompletedTasks = completedTasks.filter((t) => {
+    if (t.completedAt) return t.completedAt.startsWith(todayStr);
+    return t.dueDate === todayStr;
+  });
+
+  const dailyData = [
+    { label: '08:00', startH: 6, endH: 9, slotName: 'Pagi Awal' },
+    { label: '10:00', startH: 9, endH: 12, slotName: 'Sesi Kuliah Pagi' },
+    { label: '13:00', startH: 12, endH: 15, slotName: 'Sesi Siang' },
+    { label: '16:00', startH: 15, endH: 18, slotName: 'Sore Mandiri' },
+    { label: '19:00', startH: 18, endH: 21, slotName: 'Fokus Malam' },
+    { label: '21:00', startH: 21, endH: 24, slotName: 'Review Santai' },
+  ].map((slot) => {
+    const matching = todayCompletedTasks.filter((t) => {
+      if (t.completedAt) {
+        const h = new Date(t.completedAt).getHours();
+        return h >= slot.startH && h < slot.endH;
+      }
+      return false;
+    });
+    const hours = matching.reduce((sum, t) => sum + (Number(t.estimatedMinutes) || 45) / 60, 0);
+    return {
+      label: slot.label,
+      value: Number(hours.toFixed(1)),
+      tasks: matching.length,
+      score: matching.length > 0 ? Math.min(100, 80 + matching.length * 7) : 0,
+      focusDesc: matching.length > 0 ? `${matching.length} tugas tuntas` : slot.slotName,
+    };
+  });
 
   const activeData = timeframe === 'daily' ? dailyData : weeklyData;
-  const maxValue = Math.max(...activeData.map((d) => d.value), 6);
+  const maxActualValue = Math.max(...activeData.map((d) => d.value), 0);
+  // Ensure maximum scale is at least 2 when starting from 0
+  const maxValue = maxActualValue > 0 ? Math.max(maxActualValue * 1.25, 2) : 2;
 
   // SVG Chart Geometry
   const svgWidth = 680;
@@ -72,10 +188,49 @@ export const ProductivityView = ({
   const pathD = points.reduce((acc, p, i) => `${acc} ${i === 0 ? 'M' : 'L'} ${p.x} ${p.y}`, '');
   const areaD = `${pathD} L ${points[points.length - 1].x} ${svgHeight - paddingY} L ${points[0].x} ${svgHeight - paddingY} Z`;
 
-  const totalDuration = activeData.reduce((acc, curr) => acc + curr.value, 0).toFixed(1);
-  const avgFocusScore = Math.round(
-    activeData.reduce((acc, curr) => acc + curr.score, 0) / activeData.length
-  );
+  // Real Category Distribution
+  const CATEGORY_DEFINITIONS = [
+    { name: 'Tugas & PR', color: '#8E94F2' },
+    { name: 'Kuliah & Sekolah', color: '#4299E1' },
+    { name: 'Ujian & Kuis', color: '#ED8936' },
+    { name: 'Organisasi & Ekskul', color: '#48BB78' },
+    { name: 'Self-Care & Istirahat', color: '#ED64A6' },
+  ];
+
+  const categoryStats = CATEGORY_DEFINITIONS.map((cat) => {
+    const count = tasks.filter(
+      (t) => (t.category || '').toLowerCase() === cat.name.toLowerCase()
+    ).length;
+    const pct = totalCount > 0 ? Math.round((count / totalCount) * 100) : 0;
+    return {
+      ...cat,
+      count: `${count} tugas`,
+      pct,
+    };
+  });
+
+  // Action: Execute Reset dari Awal
+  const executeReset = () => {
+    try {
+      localStorage.setItem('studycal_study_streak_v1', '0');
+      localStorage.setItem('studycal_streak_record_v1', '0');
+      localStorage.removeItem('studycal_productivity_history_v1');
+      localStorage.setItem('studycal_productivity_reset_timestamp', new Date().toISOString());
+    } catch (e) {}
+
+    setStreak(0);
+    setStreakRecord(0);
+
+    if (resetTasksCheck && onResetTasksStatus) {
+      onResetTasksStatus();
+    }
+
+    setIsResetModalOpen(false);
+    setShowToast(true);
+    setTimeout(() => setShowToast(false), 3800);
+  };
+
+  const isFreshZeroState = totalDurationHours === 0 && completedCount === 0;
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '26px' }}>
@@ -95,7 +250,7 @@ export const ProductivityView = ({
         }}
       >
         <div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '8px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '8px', flexWrap: 'wrap' }}>
             <span
               style={{
                 backgroundColor: 'rgba(255, 255, 255, 0.16)',
@@ -112,50 +267,121 @@ export const ProductivityView = ({
             >
               <Activity size={14} color="#A5B4FC" /> ANALISIS PRODUKTIVITAS
             </span>
-            <span
-              style={{
-                backgroundColor: '#10B981',
-                padding: '4px 10px',
-                borderRadius: '20px',
-                fontSize: '0.75rem',
-                fontWeight: 700,
-              }}
-            >
-              🔥 Status: Prima
-            </span>
+
+            {isFreshZeroState ? (
+              <span
+                style={{
+                  backgroundColor: 'rgba(147, 197, 253, 0.22)',
+                  border: '1px solid rgba(147, 197, 253, 0.4)',
+                  color: '#BAE6FD',
+                  padding: '4px 11px',
+                  borderRadius: '20px',
+                  fontSize: '0.75rem',
+                  fontWeight: 700,
+                }}
+              >
+                🌱 Status: Mulai dari Awal (0 Jam)
+              </span>
+            ) : (
+              <span
+                style={{
+                  backgroundColor: '#10B981',
+                  padding: '4px 10px',
+                  borderRadius: '20px',
+                  fontSize: '0.75rem',
+                  fontWeight: 700,
+                }}
+              >
+                🔥 Status: Aktif & Berjalan
+              </span>
+            )}
           </div>
+
           <h1 style={{ fontSize: '1.75rem', fontWeight: 800, margin: '0 0 6px 0', letterSpacing: '-0.5px' }}>
             Grafik Fokus & Performa Belajar
           </h1>
-          <p style={{ margin: 0, fontSize: '0.92rem', color: '#C7D2FE', maxWidth: '600px' }}>
-            Semua aktivitas tugas, jadwal kelas, dan sesi belajar {user?.name || 'Anda'} tersinkronisasi otomatis untuk memastikan konsistensi belajar optimal.
+          <p style={{ margin: 0, fontSize: '0.92rem', color: '#C7D2FE', maxWidth: '620px' }}>
+            {isFreshZeroState
+              ? `Selamat datang ${user?.name || 'Tjandra'}! Metrik produktivitas Anda berada di titik awal (0). Selesaikan tugas harian untuk memicu grafik performa otomatis.`
+              : `Metrik waktu belajar, streak fokus, dan progres tugas ${user?.name || 'Anda'} dihitung secara nyata untuk mendampingi target semester.`}
           </p>
         </div>
 
-        <div style={{ display: 'flex', gap: '12px' }}>
+        {/* Header Action Buttons */}
+        <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
+          {/* Tombol Reset dari Awal */}
           <button
             type="button"
-            onClick={onOpenAIRecommender}
+            onClick={() => {
+              setResetTasksCheck(false);
+              setIsResetModalOpen(true);
+            }}
             style={{
-              backgroundColor: '#FFFFFF',
-              color: '#312E81',
-              border: 'none',
-              padding: '10px 18px',
+              backgroundColor: 'rgba(255, 255, 255, 0.12)',
+              color: '#FFFFFF',
+              border: '1px solid rgba(255, 255, 255, 0.25)',
+              padding: '10px 16px',
               borderRadius: 'var(--radius-md)',
               fontWeight: 700,
-              fontSize: '0.86rem',
+              fontSize: '0.84rem',
               display: 'flex',
               alignItems: 'center',
-              gap: '8px',
+              gap: '7px',
               cursor: 'pointer',
-              boxShadow: '0 4px 12px rgba(0,0,0,0.1)',
-              transition: 'transform 150ms ease',
+              transition: 'background 150ms ease',
             }}
+            title="Reset seluruh catatan metrik dan streak kembali ke nol"
           >
-            <Sparkles size={16} color="#4F46E5" /> Rekomendasi Jam AI
+            <RotateCcw size={15} /> Reset ke Awal (0)
           </button>
+
+          {onOpenAIRecommender && (
+            <button
+              type="button"
+              onClick={onOpenAIRecommender}
+              style={{
+                backgroundColor: '#FFFFFF',
+                color: '#312E81',
+                border: 'none',
+                padding: '10px 18px',
+                borderRadius: 'var(--radius-md)',
+                fontWeight: 700,
+                fontSize: '0.84rem',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '8px',
+                cursor: 'pointer',
+                boxShadow: '0 4px 12px rgba(0,0,0,0.1)',
+                transition: 'transform 150ms ease',
+              }}
+            >
+              <Sparkles size={16} color="#4F46E5" /> Rekomendasi Jam AI
+            </button>
+          )}
         </div>
       </div>
+
+      {/* Toast Notification upon Reset */}
+      {showToast && (
+        <div
+          style={{
+            backgroundColor: '#065F46',
+            color: '#ECFDF5',
+            padding: '12px 18px',
+            borderRadius: '12px',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '10px',
+            boxShadow: '0 8px 20px rgba(6, 95, 70, 0.25)',
+            fontSize: '0.86rem',
+            fontWeight: 600,
+            animation: 'fadeIn 200ms ease-out',
+          }}
+        >
+          <Check size={18} />
+          <span>Seluruh metrik produktivitas dan riwayat sesi belajar berhasil direset ke titik awal (0)!</span>
+        </div>
+      )}
 
       {/* 2. Top Metric Cards Grid */}
       <div
@@ -165,8 +391,8 @@ export const ProductivityView = ({
           gap: '18px',
         }}
       >
-        {/* Card 1: Durasi Belajar */}
-        <div className="card" style={{ padding: '20px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+        {/* Card 1: Durasi Belajar Nyata */}
+        <div className="study-card" style={{ padding: '20px', display: 'flex', flexDirection: 'column', gap: '8px', backgroundColor: '#FFFFFF' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
             <span style={{ fontSize: '0.82rem', fontWeight: 600, color: 'var(--text-muted)' }}>
               Total Durasi Belajar
@@ -188,22 +414,24 @@ export const ProductivityView = ({
           </div>
           <div style={{ display: 'flex', alignItems: 'baseline', gap: '8px' }}>
             <span style={{ fontSize: '1.9rem', fontWeight: 800, color: 'var(--text-main)' }}>
-              {totalDuration} <span style={{ fontSize: '1.1rem', fontWeight: 600 }}>Jam</span>
+              {totalDurationStr} <span style={{ fontSize: '1.1rem', fontWeight: 600 }}>Jam</span>
             </span>
-            <span style={{ fontSize: '0.78rem', color: '#10B981', fontWeight: 700, display: 'inline-flex', alignItems: 'center' }}>
-              <ArrowUpRight size={14} /> +18%
-            </span>
+            {totalDurationHours > 0 && (
+              <span style={{ fontSize: '0.78rem', color: '#10B981', fontWeight: 700, display: 'inline-flex', alignItems: 'center' }}>
+                <ArrowUpRight size={14} /> Aktif
+              </span>
+            )}
           </div>
           <div style={{ width: '100%', height: '6px', backgroundColor: '#F1F5F9', borderRadius: '4px', overflow: 'hidden', marginTop: '4px' }}>
-            <div style={{ width: '85%', height: '100%', backgroundColor: 'var(--pastel-lavender-text)', borderRadius: '4px' }} />
+            <div style={{ width: `${targetProgressPct}%`, height: '100%', backgroundColor: 'var(--pastel-lavender-text)', borderRadius: '4px', transition: 'width 0.4s ease' }} />
           </div>
           <span style={{ fontSize: '0.74rem', color: 'var(--text-muted)' }}>
-            Target mingguan: 25 Jam · Tercapai 85%
+            Target mingguan: {weeklyTargetHours} Jam · Tercapai {targetProgressPct}%
           </span>
         </div>
 
-        {/* Card 2: Tugas Selesai */}
-        <div className="card" style={{ padding: '20px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+        {/* Card 2: Penyelesaian Tugas Nyata */}
+        <div className="study-card" style={{ padding: '20px', display: 'flex', flexDirection: 'column', gap: '8px', backgroundColor: '#FFFFFF' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
             <span style={{ fontSize: '0.82rem', fontWeight: 600, color: 'var(--text-muted)' }}>
               Penyelesaian Tugas
@@ -227,23 +455,23 @@ export const ProductivityView = ({
             <span style={{ fontSize: '1.9rem', fontWeight: 800, color: 'var(--text-main)' }}>
               {completedCount} <span style={{ fontSize: '1.1rem', fontWeight: 600, color: 'var(--text-muted)' }}>/ {totalCount}</span>
             </span>
-            <span className="pastel-badge badge-mint" style={{ fontSize: '0.75rem', padding: '2px 8px' }}>
+            <span className={`pastel-badge ${completedCount > 0 ? 'badge-mint' : 'badge-lavender'}`} style={{ fontSize: '0.75rem', padding: '2px 8px' }}>
               {completionRate}% Selesai
             </span>
           </div>
           <div style={{ width: '100%', height: '6px', backgroundColor: '#F1F5F9', borderRadius: '4px', overflow: 'hidden', marginTop: '4px' }}>
-            <div style={{ width: `${completionRate}%`, height: '100%', backgroundColor: '#10B981', borderRadius: '4px' }} />
+            <div style={{ width: `${completionRate}%`, height: '100%', backgroundColor: '#10B981', borderRadius: '4px', transition: 'width 0.4s ease' }} />
           </div>
           <span style={{ fontSize: '0.74rem', color: 'var(--text-muted)' }}>
             {totalCount - completedCount} tugas aktif menunggu penyelesaian
           </span>
         </div>
 
-        {/* Card 3: Skor Fokus */}
-        <div className="card" style={{ padding: '20px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+        {/* Card 3: Skor Fokus Nyata */}
+        <div className="study-card" style={{ padding: '20px', display: 'flex', flexDirection: 'column', gap: '8px', backgroundColor: '#FFFFFF' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
             <span style={{ fontSize: '0.82rem', fontWeight: 600, color: 'var(--text-muted)' }}>
-              Rata-rata Skor Fokus
+              Skor Fokus Belajar
             </span>
             <div
               style={{
@@ -265,19 +493,19 @@ export const ProductivityView = ({
               {avgFocusScore}%
             </span>
             <span className="pastel-badge badge-peach" style={{ fontSize: '0.75rem', padding: '2px 8px' }}>
-              Optimal
+              {avgFocusScore >= 80 ? 'Optimal' : avgFocusScore > 0 ? 'Meningkat' : 'Mulai (0)'}
             </span>
           </div>
           <div style={{ width: '100%', height: '6px', backgroundColor: '#F1F5F9', borderRadius: '4px', overflow: 'hidden', marginTop: '4px' }}>
-            <div style={{ width: `${avgFocusScore}%`, height: '100%', backgroundColor: '#F59E0B', borderRadius: '4px' }} />
+            <div style={{ width: `${avgFocusScore}%`, height: '100%', backgroundColor: '#F59E0B', borderRadius: '4px', transition: 'width 0.4s ease' }} />
           </div>
           <span style={{ fontSize: '0.74rem', color: 'var(--text-muted)' }}>
-            Dihitung dari konsistensi jeda & durasi sesi
+            {completedCount > 0 ? 'Dihitung dari ketuntasan tugas nyata' : 'Mulai selesaikan tugas untuk menaikkan skor'}
           </span>
         </div>
 
-        {/* Card 4: Study Streak */}
-        <div className="card" style={{ padding: '20px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+        {/* Card 4: Study Streak (Mulai dari 0) */}
+        <div className="study-card" style={{ padding: '20px', display: 'flex', flexDirection: 'column', gap: '8px', backgroundColor: '#FFFFFF' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
             <span style={{ fontSize: '0.82rem', fontWeight: 600, color: 'var(--text-muted)' }}>
               Study Streak 🔥
@@ -299,23 +527,23 @@ export const ProductivityView = ({
           </div>
           <div style={{ display: 'flex', alignItems: 'baseline', gap: '8px' }}>
             <span style={{ fontSize: '1.9rem', fontWeight: 800, color: 'var(--text-main)' }}>
-              5 <span style={{ fontSize: '1.1rem', fontWeight: 600 }}>Hari</span>
+              {streak} <span style={{ fontSize: '1.1rem', fontWeight: 600 }}>Hari</span>
             </span>
-            <span style={{ fontSize: '0.78rem', color: '#10B981', fontWeight: 700 }}>
-              Rekor: 14 Hari
+            <span style={{ fontSize: '0.78rem', color: streak > 0 ? '#10B981' : '#94A3B8', fontWeight: 700 }}>
+              Rekor: {streakRecord} Hari
             </span>
           </div>
           <div style={{ width: '100%', height: '6px', backgroundColor: '#F1F5F9', borderRadius: '4px', overflow: 'hidden', marginTop: '4px' }}>
-            <div style={{ width: '60%', height: '100%', backgroundColor: '#EC4899', borderRadius: '4px' }} />
+            <div style={{ width: `${Math.min(100, streak * 15)}%`, height: '100%', backgroundColor: '#EC4899', borderRadius: '4px', transition: 'width 0.4s ease' }} />
           </div>
           <span style={{ fontSize: '0.74rem', color: 'var(--text-muted)' }}>
-            Tetap belajar hari ini untuk mempertahankan streak!
+            {streak === 0 ? 'Belajar hari ini untuk mencatat streak pertama Anda!' : 'Pertahankan konsistensi belajar harian!'}
           </span>
         </div>
       </div>
 
       {/* 3. Main Interactive Chart Section */}
-      <div className="card" style={{ padding: '26px' }}>
+      <div className="study-card" style={{ padding: '26px', backgroundColor: '#FFFFFF' }}>
         <div
           style={{
             display: 'flex',
@@ -331,7 +559,7 @@ export const ProductivityView = ({
               Grafik Aktivitas Belajar
             </h2>
             <p style={{ margin: 0, fontSize: '0.82rem', color: 'var(--text-muted)' }}>
-              Visualisasi durasi belajar dan penyelesaian tugas per interval waktu.
+              Visualisasi durasi belajar nyata dan penyelesaian tugas per interval waktu.
             </p>
           </div>
 
@@ -345,23 +573,6 @@ export const ProductivityView = ({
                 borderRadius: '8px',
               }}
             >
-              <button
-                type="button"
-                onClick={() => setTimeframe('daily')}
-                style={{
-                  border: 'none',
-                  padding: '6px 12px',
-                  borderRadius: '6px',
-                  fontSize: '0.8rem',
-                  fontWeight: 600,
-                  cursor: 'pointer',
-                  backgroundColor: timeframe === 'daily' ? '#FFFFFF' : 'transparent',
-                  color: timeframe === 'daily' ? 'var(--text-main)' : 'var(--text-muted)',
-                  boxShadow: timeframe === 'daily' ? '0 1px 3px rgba(0,0,0,0.08)' : 'none',
-                }}
-              >
-                Harian
-              </button>
               <button
                 type="button"
                 onClick={() => setTimeframe('weekly')}
@@ -378,6 +589,23 @@ export const ProductivityView = ({
                 }}
               >
                 Mingguan
+              </button>
+              <button
+                type="button"
+                onClick={() => setTimeframe('daily')}
+                style={{
+                  border: 'none',
+                  padding: '6px 12px',
+                  borderRadius: '6px',
+                  fontSize: '0.8rem',
+                  fontWeight: 600,
+                  cursor: 'pointer',
+                  backgroundColor: timeframe === 'daily' ? '#FFFFFF' : 'transparent',
+                  color: timeframe === 'daily' ? 'var(--text-main)' : 'var(--text-muted)',
+                  boxShadow: timeframe === 'daily' ? '0 1px 3px rgba(0,0,0,0.08)' : 'none',
+                }}
+              >
+                Harian
               </button>
             </div>
 
@@ -510,8 +738,8 @@ export const ProductivityView = ({
             {chartType === 'bar' && (
               <>
                 {points.map((p, i) => {
-                  const barW = chartW / points.length * 0.48;
-                  const barH = ((p.value / maxValue) * chartH);
+                  const barW = (chartW / points.length) * 0.48;
+                  const barH = (p.value / maxValue) * chartH;
                   const barX = p.x - barW / 2;
                   const barY = paddingY + chartH - barH;
                   const isHov = hoveredIndex === i;
@@ -522,9 +750,9 @@ export const ProductivityView = ({
                         x={barX}
                         y={barY}
                         width={barW}
-                        height={barH}
+                        height={Math.max(barH, 3)}
                         rx="5"
-                        fill={isHov ? '#4F46E5' : '#818CF8'}
+                        fill={isHov ? '#4F46E5' : p.value > 0 ? '#818CF8' : '#E2E8F0'}
                         style={{ transition: 'all 150ms ease' }}
                       />
                       <text
@@ -574,6 +802,31 @@ export const ProductivityView = ({
             </div>
           )}
         </div>
+
+        {/* Empty state notice if all chart values are 0 */}
+        {maxActualValue === 0 && (
+          <div
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              gap: '10px',
+              padding: '14px 20px',
+              backgroundColor: '#F8FAFC',
+              borderRadius: '12px',
+              border: '1px dashed #CBD5E1',
+              marginTop: '12px',
+              color: '#64748B',
+              fontSize: '0.84rem',
+              textAlign: 'center',
+            }}
+          >
+            <Sparkles size={16} color="#6366F1" />
+            <span>
+              Grafik produktivitas bersih (0 Jam). Selesaikan tugas belajarmu untuk melihat lonjakan grafik secara real-time!
+            </span>
+          </div>
+        )}
       </div>
 
       {/* 4. Bottom Grid: Kategori Distribusi & AI Focus Insights */}
@@ -584,25 +837,20 @@ export const ProductivityView = ({
           gap: '20px',
         }}
       >
-        {/* Kategori Fokus Belajar */}
-        <div className="card" style={{ padding: '24px' }}>
+        {/* Kategori Fokus Belajar Nyata */}
+        <div className="study-card" style={{ padding: '24px', backgroundColor: '#FFFFFF' }}>
           <h3 style={{ fontSize: '1.05rem', fontWeight: 800, margin: '0 0 14px 0', color: 'var(--text-main)' }}>
-            Distribusi Kategori Belajar
+            Distribusi Kategori Belajar ({totalCount} Tugas)
           </h3>
           <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
-            {[
-              { name: 'Tugas & PR', pct: 42, color: '#8E94F2', count: `${completedCount} tugas` },
-              { name: 'Kuliah & Sekolah', pct: 28, color: '#4299E1', count: `${schedules.length} mata pelajaran` },
-              { name: 'Ujian & Kuis', pct: 18, color: '#ED8936', count: '2 kuis pekan ini' },
-              { name: 'Self-Care & Istirahat', pct: 12, color: '#48BB78', count: 'Optimal' },
-            ].map((cat, idx) => (
+            {categoryStats.map((cat, idx) => (
               <div key={idx}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.82rem', marginBottom: '6px' }}>
                   <span style={{ fontWeight: 600, color: 'var(--text-main)' }}>{cat.name}</span>
                   <span style={{ color: 'var(--text-muted)' }}>{cat.count} ({cat.pct}%)</span>
                 </div>
                 <div style={{ width: '100%', height: '8px', backgroundColor: '#F1F5F9', borderRadius: '4px', overflow: 'hidden' }}>
-                  <div style={{ width: `${cat.pct}%`, height: '100%', backgroundColor: cat.color, borderRadius: '4px' }} />
+                  <div style={{ width: `${cat.pct}%`, height: '100%', backgroundColor: cat.color, borderRadius: '4px', transition: 'width 0.4s ease' }} />
                 </div>
               </div>
             ))}
@@ -610,7 +858,7 @@ export const ProductivityView = ({
         </div>
 
         {/* Rekomendasi Jam Emas AI */}
-        <div className="card" style={{ padding: '24px', display: 'flex', flexDirection: 'column', justifyContent: 'space-between' }}>
+        <div className="study-card" style={{ padding: '24px', display: 'flex', flexDirection: 'column', justifyContent: 'space-between', backgroundColor: '#FFFFFF' }}>
           <div>
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '10px' }}>
               <div
@@ -632,7 +880,7 @@ export const ProductivityView = ({
               </h3>
             </div>
             <p style={{ fontSize: '0.84rem', color: 'var(--text-muted)', margin: '0 0 16px 0', lineHeight: 1.5 }}>
-              Berdasarkan analisis performa belajar Anda, otak Anda paling responsif untuk materi kompleks pada jam berikut:
+              Berdasarkan analisis ritme belajar, otak Anda paling responsif untuk materi kompleks pada jam berikut:
             </p>
 
             <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
@@ -666,6 +914,171 @@ export const ProductivityView = ({
           </div>
         </div>
       </div>
+
+      {/* 5. Interactive Reset Modal with Enter confirmation */}
+      {isResetModalOpen && (
+        <div
+          className="modal-overlay"
+          onClick={() => setIsResetModalOpen(false)}
+          style={{
+            zIndex: 1100,
+            backgroundColor: 'rgba(15, 23, 42, 0.55)',
+            backdropFilter: 'blur(5px)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            padding: '16px',
+            animation: 'fadeIn 180ms ease-out',
+          }}
+        >
+          <div
+            className="modal-content"
+            onClick={(e) => e.stopPropagation()}
+            style={{
+              maxWidth: '450px',
+              width: '100%',
+              backgroundColor: '#FFFFFF',
+              borderRadius: '20px',
+              padding: '28px 24px',
+              boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.25)',
+              display: 'flex',
+              flexDirection: 'column',
+              alignItems: 'center',
+              textAlign: 'center',
+              position: 'relative',
+              animation: 'scaleUp 200ms cubic-bezier(0.16, 1, 0.3, 1)',
+            }}
+          >
+            {/* Close Button top-right */}
+            <button
+              type="button"
+              onClick={() => setIsResetModalOpen(false)}
+              style={{
+                position: 'absolute',
+                top: '16px',
+                right: '16px',
+                background: 'none',
+                border: 'none',
+                color: '#94A3B8',
+                cursor: 'pointer',
+                padding: '6px',
+                borderRadius: '50%',
+              }}
+              title="Batal / Tutup (Esc)"
+            >
+              <X size={18} />
+            </button>
+
+            {/* Warning Icon Badge */}
+            <div
+              style={{
+                width: '60px',
+                height: '60px',
+                borderRadius: '50%',
+                backgroundColor: '#FEF3C7',
+                color: '#D97706',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                marginBottom: '16px',
+                boxShadow: '0 0 0 8px #FFFBEB',
+              }}
+            >
+              <RotateCcw size={28} strokeWidth={2.2} />
+            </div>
+
+            <h3 style={{ fontSize: '1.25rem', fontWeight: 800, color: '#1E293B', margin: '0 0 8px 0' }}>
+              Reset Metrik Produktivitas ke Awal?
+            </h3>
+
+            <p style={{ fontSize: '0.86rem', color: '#64748B', lineHeight: 1.55, margin: '0 0 18px 0' }}>
+              Tindakan ini akan mereset hitungan durasi belajar, skor fokus, riwayat sesi, dan study streak Anda kembali ke <strong>0 Hari (Mulai dari Awal)</strong>.
+            </p>
+
+            {/* Checkbox option to also uncomplete tasks */}
+            <label
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '10px',
+                backgroundColor: '#F8FAFC',
+                border: '1px solid #E2E8F0',
+                padding: '10px 14px',
+                borderRadius: '10px',
+                width: '100%',
+                cursor: 'pointer',
+                textAlign: 'left',
+                fontSize: '0.82rem',
+                color: '#334155',
+                marginBottom: '22px',
+              }}
+            >
+              <input
+                type="checkbox"
+                checked={resetTasksCheck}
+                onChange={(e) => setResetTasksCheck(e.target.checked)}
+                style={{ width: '16px', height: '16px', cursor: 'pointer', accentColor: '#4F46E5' }}
+              />
+              <span>Reset juga status tugas selesai menjadi belum selesai (0% tuntas)</span>
+            </label>
+
+            {/* Buttons */}
+            <div style={{ display: 'flex', gap: '12px', width: '100%' }}>
+              <button
+                type="button"
+                onClick={() => setIsResetModalOpen(false)}
+                style={{
+                  flex: 1,
+                  padding: '11px 16px',
+                  borderRadius: '12px',
+                  border: '1px solid #CBD5E1',
+                  backgroundColor: '#FFFFFF',
+                  color: '#475569',
+                  fontSize: '0.88rem',
+                  fontWeight: 700,
+                  cursor: 'pointer',
+                }}
+              >
+                Batal (Esc)
+              </button>
+
+              <button
+                ref={confirmBtnRef}
+                type="button"
+                onClick={executeReset}
+                style={{
+                  flex: 1,
+                  padding: '11px 16px',
+                  borderRadius: '12px',
+                  border: 'none',
+                  background: 'linear-gradient(135deg, #4F46E5 0%, #3730A3 100%)',
+                  color: '#FFFFFF',
+                  fontSize: '0.88rem',
+                  fontWeight: 700,
+                  cursor: 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  gap: '8px',
+                  boxShadow: '0 4px 14px rgba(79, 70, 229, 0.35)',
+                  outline: 'none',
+                }}
+              >
+                <RotateCcw size={15} /> Ya, Reset (Enter ↵)
+              </button>
+            </div>
+
+            {/* Keyboard hint */}
+            <div style={{ marginTop: '14px', fontSize: '0.74rem', color: '#94A3B8', display: 'flex', alignItems: 'center', gap: '6px' }}>
+              <span>Tekan</span>
+              <kbd style={{ padding: '2px 6px', background: '#F1F5F9', border: '1px solid #CBD5E1', borderRadius: '4px', fontSize: '0.7rem', fontWeight: 700, color: '#475569' }}>Enter ↵</kbd>
+              <span>untuk reset instan</span>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
+
+export default ProductivityView;

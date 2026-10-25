@@ -27,28 +27,29 @@ export const ProductivityPanel = ({
   const [chartType, setChartType] = useState('line'); // 'line' | 'bar'
   const [hoveredIndex, setHoveredIndex] = useState(null);
 
-  // Data series for Harian & Mingguan
+  // Data series for Harian & Mingguan (dimulai dari 0)
   const dailyData = [
-    { label: '08:00', value: 1.2, tasks: 1, score: 85 },
-    { label: '11:00', value: 2.0, tasks: 1, score: 90 },
-    { label: '14:00', value: 0.8, tasks: 0, score: 78 },
-    { label: '16:00', value: 1.5, tasks: 2, score: 94 },
-    { label: '19:00', value: 2.4, tasks: 1, score: 92 },
-    { label: '21:00', value: 1.1, tasks: completedTasksCount, score: 88 },
+    { label: '08:00', value: 0, tasks: 0, score: 0 },
+    { label: '11:00', value: 0, tasks: 0, score: 0 },
+    { label: '14:00', value: 0, tasks: 0, score: 0 },
+    { label: '16:00', value: 0, tasks: 0, score: 0 },
+    { label: '19:00', value: 0, tasks: 0, score: 0 },
+    { label: '21:00', value: Number((completedTasksCount * 0.5).toFixed(1)), tasks: completedTasksCount, score: completedTasksCount > 0 ? 88 : 0 },
   ];
 
   const weeklyData = [
-    { label: 'Sen', value: 3.5, tasks: 2, score: 88 },
-    { label: 'Sel', value: 4.8, tasks: 4, score: 92 },
-    { label: 'Rab', value: 2.6, tasks: 1, score: 80 },
-    { label: 'Kam', value: 5.2, tasks: 5, score: 95 },
-    { label: 'Jum', value: 3.9, tasks: 3, score: 89 },
-    { label: 'Sab', value: 4.1, tasks: 3, score: 91 },
-    { label: 'Min', value: 2.0, tasks: 1, score: 85 },
+    { label: 'Sen', value: 0, tasks: 0, score: 0 },
+    { label: 'Sel', value: 0, tasks: 0, score: 0 },
+    { label: 'Rab', value: 0, tasks: 0, score: 0 },
+    { label: 'Kam', value: 0, tasks: 0, score: 0 },
+    { label: 'Jum', value: 0, tasks: 0, score: 0 },
+    { label: 'Sab', value: 0, tasks: 0, score: 0 },
+    { label: 'Min', value: Number((completedTasksCount * 0.5).toFixed(1)), tasks: completedTasksCount, score: completedTasksCount > 0 ? 85 : 0 },
   ];
 
   const activeData = timeframe === 'daily' ? dailyData : weeklyData;
-  const maxValue = Math.max(...activeData.map((d) => d.value), 6);
+  const maxActual = Math.max(...activeData.map((d) => d.value), 0);
+  const maxValue = maxActual > 0 ? maxActual * 1.25 : 2;
 
   // SVG Chart Dimensions
   const svgWidth = 210;

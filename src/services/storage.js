@@ -981,6 +981,35 @@ export const toggleTaskStatus = (userId, taskId) => {
   return data.tasks;
 };
 
+export const resetAllTasksStatus = async (userId) => {
+  const targetId = CANONICAL_USER_ID;
+  const data = getUserData(targetId) || (userId ? getUserData(userId) : null);
+  if (!data || !data.tasks) return [];
+
+  data.tasks = data.tasks.map((t) => ({
+    ...t,
+    isCompleted: false,
+    status: 'in_progress',
+    completedAt: null,
+  }));
+
+  saveUserData(targetId, data);
+  if (userId && userId !== targetId) {
+    saveUserData(userId, data);
+  }
+
+  // Sync to Supabase in background
+  if (isSupabaseConfigured() && Array.isArray(data.tasks)) {
+    try {
+      await Promise.all(data.tasks.map((t) => syncTaskToSupabase(targetId, t)));
+    } catch (e) {
+      console.warn('Supabase reset tasks status warning:', e);
+    }
+  }
+
+  return data.tasks;
+};
+
 // ==========================================
 // Schedule Operations (Local + Supabase Cloud)
 // ==========================================

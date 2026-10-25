@@ -23,6 +23,7 @@ import {
   pullDataFromSupabase,
   subscribeToCloudChanges,
   CANONICAL_USER_ID,
+  resetAllTasksStatus,
 } from './services/storage';
 import { isSupabaseConfigured } from './services/supabaseClient';
 import { upsertSupabaseProfile } from './services/supabaseService';
@@ -316,6 +317,15 @@ export function App() {
     if (Array.isArray(updated)) setTasks(updated);
   };
 
+  const handleResetAllTasksStatus = async () => {
+    if (!currentUser) return;
+    setTasks((prev) =>
+      prev.map((t) => ({ ...t, isCompleted: false, status: 'in_progress', completedAt: null }))
+    );
+    const updated = await resetAllTasksStatus(currentUser.id);
+    if (Array.isArray(updated)) setTasks(updated);
+  };
+
   const handleEditTask = (task) => {
     setEditingTask(task);
     setIsTaskModalOpen(true);
@@ -603,6 +613,11 @@ export function App() {
                 setEditingTask(null);
                 setIsTaskModalOpen(true);
               }}
+              onOpenAIRecommender={() => {
+                setAiSelectedTask(null);
+                setIsAIModalOpen(true);
+              }}
+              onResetTasksStatus={handleResetAllTasksStatus}
             />
           )}
 
