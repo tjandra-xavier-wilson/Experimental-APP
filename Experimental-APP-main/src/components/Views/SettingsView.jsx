@@ -53,6 +53,10 @@ export const SettingsView = ({
         major: major.trim(),
         semester: semester.trim(),
         studyPreference,
+        avatarBg: user?.avatarBg || '#8E94F2',
+        status: user?.status || 'Sedang Belajar 📚',
+        bio: user?.bio || '',
+        target: user?.target || '',
       });
       setSavedSuccess(true);
       setTimeout(() => setSavedSuccess(false), 2500);

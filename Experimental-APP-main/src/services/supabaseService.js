@@ -105,7 +105,35 @@ export const getSupabaseProfile = async (userId) => {
       console.warn('Error fetching profile from Supabase:', error.message);
       return null;
     }
-    return data;
+    if (!data) return null;
+
+    let parsedPref = {
+      preference: 'balanced',
+      avatarBg: '#8E94F2',
+      status: 'Sedang Belajar 📚',
+      bio: '',
+      target: '',
+    };
+    if (data.study_preference) {
+      try {
+        if (data.study_preference.startsWith('{')) {
+          parsedPref = { ...parsedPref, ...JSON.parse(data.study_preference) };
+        } else {
+          parsedPref.preference = data.study_preference;
+        }
+      } catch (e) {}
+    }
+
+    return {
+      ...data,
+      educationLevel: data.education_level,
+      schoolName: data.school_name,
+      studyPreference: parsedPref.preference,
+      avatarBg: parsedPref.avatarBg || '#8E94F2',
+      status: parsedPref.status || 'Sedang Belajar 📚',
+      bio: parsedPref.bio || '',
+      target: parsedPref.target || '',
+    };
   } catch (e) {
     console.warn('Supabase profile query failed:', e);
     return null;
@@ -116,6 +144,14 @@ export const upsertSupabaseProfile = async (profile) => {
   const client = getSupabase();
   if (!client || !profile?.id) return;
 
+  const prefMeta = {
+    preference: profile.studyPreference || profile.study_preference || 'balanced',
+    avatarBg: profile.avatarBg || '#8E94F2',
+    status: profile.status || 'Sedang Belajar 📚',
+    bio: profile.bio || '',
+    target: profile.target || '',
+  };
+
   const payload = {
     id: profile.id,
     name: profile.name,
@@ -124,7 +160,7 @@ export const upsertSupabaseProfile = async (profile) => {
     school_name: profile.schoolName || profile.school_name,
     major: profile.major,
     semester: profile.semester,
-    study_preference: profile.studyPreference || profile.study_preference || 'balanced',
+    study_preference: JSON.stringify(prefMeta),
     updated_at: new Date().toISOString(),
   };
 
@@ -328,6 +364,13 @@ export const syncCourseToSupabase = async (userId, course) => {
   if (error) console.error('Error syncing course to Supabase:', error);
 };
 
+export const deleteCourseFromSupabase = async (courseId) => {
+  const client = getSupabase();
+  if (!client || !courseId) return;
+  const { error } = await client.from('courses').delete().eq('id', courseId);
+  if (error) console.error('Error deleting course from Supabase:', error);
+};
+
 export const syncFriendsToSupabase = async (userId, friends) => {
   const client = getSupabase();
   if (!client || !Array.isArray(friends)) return;
@@ -349,6 +392,13 @@ export const syncFriendsToSupabase = async (userId, friends) => {
     };
     await client.from('friends').upsert(payload);
   }
+};
+
+export const deleteFriendFromSupabase = async (friendId) => {
+  const client = getSupabase();
+  if (!client || !friendId) return;
+  const { error } = await client.from('friends').delete().eq('id', friendId);
+  if (error) console.error('Error deleting friend from Supabase:', error);
 };
 
 export const syncNotesToSupabase = async (userId, notes) => {

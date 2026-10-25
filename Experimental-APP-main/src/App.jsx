@@ -8,11 +8,13 @@ import {
   toggleTaskStatus,
   saveSchedule,
   deleteSchedule,
+  deleteCourse,
   logoutUser,
   getStoredUsers,
   ensureDefaultUser,
   getFriends,
   addFriend,
+  deleteFriend,
   getNotes,
   saveNotes,
   deleteNote,
@@ -20,8 +22,10 @@ import {
   fetchCloudUserData,
   pullDataFromSupabase,
   subscribeToCloudChanges,
+  CANONICAL_USER_ID,
 } from './services/storage';
 import { isSupabaseConfigured } from './services/supabaseClient';
+import { upsertSupabaseProfile } from './services/supabaseService';
 import { requestNotificationPermission, triggerReminderAlert } from './services/notificationService';
 import { Sidebar } from './components/Sidebar';
 import { Navbar } from './components/Navbar';
@@ -154,6 +158,7 @@ export function App() {
   const [isNotesModalOpen, setIsNotesModalOpen] = useState(false);
   const [isSettingsModalOpen, setIsSettingsModalOpen] = useState(false);
   const [isSupabaseModalOpen, setIsSupabaseModalOpen] = useState(false);
+  const [realtimeStatus, setRealtimeStatus] = useState('CONNECTING'); // 'CONNECTING' | 'SUBSCRIBED' | 'FALLBACK_POLLING' | 'TIMED_OUT' | 'CHANNEL_ERROR' | 'CLOSED'
 
   // 1. Initial Session & Supabase Cloud Sync
   useEffect(() => {
@@ -162,26 +167,46 @@ export function App() {
     const init = async () => {
       const session = getCurrentSession();
       const user = session?.user || ensureDefaultUser();
-      loadUserData(user);
+      loadUserData(user, true); // load local cache first for instant UI response
 
-      // Fetch fresh data from Supabase Cloud
+      // Fetch fresh data from Supabase Cloud once
       try {
         const cloudData = await fetchCloudUserData(user.id);
         if (cloudData) {
-          if (cloudData.tasks && cloudData.tasks.length > 0) setTasks(cloudData.tasks);
-          if (cloudData.schedules && cloudData.schedules.length > 0) setSchedules(cloudData.schedules);
-          if (cloudData.courses && cloudData.courses.length > 0) setCourses(cloudData.courses);
-          if (cloudData.friends && cloudData.friends.length > 0) setFriends(cloudData.friends);
-          if (cloudData.notes && cloudData.notes.length > 0) setNotes(cloudData.notes);
+          if (Array.isArray(cloudData.tasks)) setTasks(cloudData.tasks);
+          if (Array.isArray(cloudData.schedules)) setSchedules(cloudData.schedules);
+          if (Array.isArray(cloudData.courses)) setCourses(cloudData.courses);
+          if (Array.isArray(cloudData.friends)) setFriends(cloudData.friends);
+          if (Array.isArray(cloudData.notes)) setNotes(cloudData.notes);
+          if (cloudData.profile) {
+            setCurrentUser((prev) => ({ ...prev, ...cloudData.profile }));
+          }
         }
       } catch (err) {
         console.warn('Supabase initial fetch warning:', err);
       }
 
-      // Realtime subscription for cross-device updates (Laptop <-> HP)
-      unsubscribe = subscribeToCloudChanges(user.id, (freshTasks) => {
-        if (freshTasks) setTasks(freshTasks);
-      });
+      // Realtime subscription with resilient smart fallback for cross-device updates (Laptop <-> HP)
+      unsubscribe = subscribeToCloudChanges(
+        user.id,
+        (freshTasks, freshBundle) => {
+          if (freshBundle) {
+            if (Array.isArray(freshBundle.tasks)) setTasks(freshBundle.tasks);
+            if (Array.isArray(freshBundle.schedules)) setSchedules(freshBundle.schedules);
+            if (Array.isArray(freshBundle.courses)) setCourses(freshBundle.courses);
+            if (Array.isArray(freshBundle.friends)) setFriends(freshBundle.friends);
+            if (Array.isArray(freshBundle.notes)) setNotes(freshBundle.notes);
+            if (freshBundle.profile) {
+              setCurrentUser((prev) => ({ ...prev, ...freshBundle.profile }));
+            }
+          } else if (freshTasks) {
+            setTasks(freshTasks);
+          }
+        },
+        (status) => {
+          setRealtimeStatus(status);
+        }
+      );
     };
 
     init();
@@ -195,7 +220,7 @@ export function App() {
   }, []);
 
   // Helper to load user bundle
-  const loadUserData = (user) => {
+  const loadUserData = (user, skipCloudPull = false) => {
     setCurrentUser(user);
     const data = getUserData(user.id);
     if (data) {
@@ -209,15 +234,18 @@ export function App() {
     setNotes(getNotes(user.id));
 
     // If Supabase Cloud is configured, pull latest remote data in background
-    if (isSupabaseConfigured() && user?.id) {
+    if (!skipCloudPull && isSupabaseConfigured() && user?.id) {
       pullDataFromSupabase(user.id)
         .then((merged) => {
           if (merged) {
-            if (merged.tasks) setTasks(merged.tasks);
-            if (merged.schedules) setSchedules(merged.schedules);
-            if (merged.courses) setCourses(merged.courses);
-            if (merged.friends) setFriends(merged.friends);
-            if (merged.notes) setNotes(merged.notes);
+            if (Array.isArray(merged.tasks)) setTasks(merged.tasks);
+            if (Array.isArray(merged.schedules)) setSchedules(merged.schedules);
+            if (Array.isArray(merged.courses)) setCourses(merged.courses);
+            if (Array.isArray(merged.friends)) setFriends(merged.friends);
+            if (Array.isArray(merged.notes)) setNotes(merged.notes);
+            if (merged.profile) {
+              setCurrentUser((prev) => ({ ...prev, ...merged.profile }));
+            }
           }
         })
         .catch((e) => console.warn('Cloud sync error on load:', e));
@@ -232,11 +260,14 @@ export function App() {
     try {
       const cloudData = await fetchCloudUserData(user.id);
       if (cloudData) {
-        if (cloudData.tasks && cloudData.tasks.length > 0) setTasks(cloudData.tasks);
-        if (cloudData.schedules && cloudData.schedules.length > 0) setSchedules(cloudData.schedules);
-        if (cloudData.courses && cloudData.courses.length > 0) setCourses(cloudData.courses);
-        if (cloudData.friends && cloudData.friends.length > 0) setFriends(cloudData.friends);
-        if (cloudData.notes && cloudData.notes.length > 0) setNotes(cloudData.notes);
+        if (Array.isArray(cloudData.tasks)) setTasks(cloudData.tasks);
+        if (Array.isArray(cloudData.schedules)) setSchedules(cloudData.schedules);
+        if (Array.isArray(cloudData.courses)) setCourses(cloudData.courses);
+        if (Array.isArray(cloudData.friends)) setFriends(cloudData.friends);
+        if (Array.isArray(cloudData.notes)) setNotes(cloudData.notes);
+        if (cloudData.profile) {
+          setCurrentUser((prev) => ({ ...prev, ...cloudData.profile }));
+        }
       }
     } catch (err) {
       console.warn('Supabase auth cloud fetch warning:', err);
@@ -278,10 +309,11 @@ export function App() {
     setEditingTask(null);
   };
 
-  const handleDeleteTask = (taskId) => {
+  const handleDeleteTask = async (taskId) => {
     if (!currentUser) return;
-    const updated = deleteTask(currentUser.id, taskId);
-    setTasks(updated);
+    setTasks((prev) => prev.filter((t) => t.id !== taskId));
+    const updated = await deleteTask(currentUser.id, taskId);
+    if (Array.isArray(updated)) setTasks(updated);
   };
 
   const handleEditTask = (task) => {
@@ -318,16 +350,32 @@ export function App() {
     setSchedules(updated);
   };
 
-  const handleDeleteSchedule = (scheduleId) => {
+  const handleDeleteSchedule = async (scheduleId) => {
     if (!currentUser) return;
-    const updated = deleteSchedule(currentUser.id, scheduleId);
-    setSchedules(updated);
+    const targetSchedule = (schedules || []).find((s) => s.id === scheduleId);
+    setSchedules((prev) => prev.filter((s) => s.id !== scheduleId));
+    const updated = await deleteSchedule(currentUser.id, scheduleId);
+    if (Array.isArray(updated)) setSchedules(updated);
+
+    if (targetSchedule && targetSchedule.courseId) {
+      const remainingUsesCourse = (updated || []).some((s) => s.courseId === targetSchedule.courseId);
+      if (!remainingUsesCourse) {
+        const updatedCourses = await deleteCourse(currentUser.id, targetSchedule.courseId);
+        if (Array.isArray(updatedCourses)) setCourses(updatedCourses);
+      }
+    }
   };
 
   // Friends Handlers
   const handleAddFriend = (friendData) => {
     if (!currentUser) return;
     const updated = addFriend(currentUser.id, friendData);
+    setFriends(updated);
+  };
+
+  const handleDeleteFriend = (friendId) => {
+    if (!currentUser) return;
+    const updated = deleteFriend(currentUser.id, friendId);
     setFriends(updated);
   };
 
@@ -344,14 +392,21 @@ export function App() {
     setNotes(updated);
   };
 
-  // User Profile Update
-  const handleUpdateUser = (updatedUser) => {
+  // User Profile Update (Local + Supabase Cloud)
+  const handleUpdateUser = async (updatedUser) => {
     setCurrentUser(updatedUser);
     const users = getStoredUsers();
-    const idx = users.findIndex((u) => u.id === updatedUser.id);
+    const idx = users.findIndex((u) => u.id === updatedUser.id || u.id === CANONICAL_USER_ID);
     if (idx >= 0) {
       users[idx] = updatedUser;
       saveUsers(users);
+    }
+    if (isSupabaseConfigured()) {
+      try {
+        await upsertSupabaseProfile(updatedUser);
+      } catch (e) {
+        console.warn('Supabase profile update sync error:', e);
+      }
     }
   };
 
@@ -397,11 +452,11 @@ export function App() {
       if (currentUser?.id) {
         const cloudData = await fetchCloudUserData(currentUser.id);
         if (cloudData) {
-          if (cloudData.tasks && cloudData.tasks.length > 0) setTasks(cloudData.tasks);
-          if (cloudData.schedules && cloudData.schedules.length > 0) setSchedules(cloudData.schedules);
-          if (cloudData.courses && cloudData.courses.length > 0) setCourses(cloudData.courses);
-          if (cloudData.friends && cloudData.friends.length > 0) setFriends(cloudData.friends);
-          if (cloudData.notes && cloudData.notes.length > 0) setNotes(cloudData.notes);
+          if (Array.isArray(cloudData.tasks)) setTasks(cloudData.tasks);
+          if (Array.isArray(cloudData.schedules)) setSchedules(cloudData.schedules);
+          if (Array.isArray(cloudData.courses)) setCourses(cloudData.courses);
+          if (Array.isArray(cloudData.friends)) setFriends(cloudData.friends);
+          if (Array.isArray(cloudData.notes)) setNotes(cloudData.notes);
         } else {
           loadUserData(currentUser);
         }
@@ -526,6 +581,7 @@ export function App() {
                   setIsTaskModalOpen(true);
                 }}
                 onOpenClassModal={() => setIsClassModalOpen(true)}
+                onNavigateToClasses={() => handleSelectTab('classes')}
                 onSelectTaskForAI={handleSelectTaskForAI}
                 onOpenAIRecommender={() => {
                   setAiSelectedTask(null);
@@ -604,7 +660,11 @@ export function App() {
             <FriendsView
               friends={friends}
               onAddFriend={handleAddFriend}
+              onDeleteFriend={handleDeleteFriend}
               currentUser={currentUser}
+              onUpdateUser={handleUpdateUser}
+              tasks={tasks}
+              userName={currentUser?.name}
             />
           )}
 
@@ -613,12 +673,18 @@ export function App() {
               user={currentUser}
               tasks={tasks}
               schedules={schedules}
+              courses={courses}
               friends={friends}
               notes={notes}
+              realtimeStatus={realtimeStatus}
               onDataSynced={() => {
                 if (currentUser) loadUserData(currentUser);
               }}
+              onRefreshData={() => {
+                if (currentUser) loadUserData(currentUser);
+              }}
               onOpenConfigModal={() => setIsSupabaseModalOpen(true)}
+              onOpenSupabaseModal={() => setIsSupabaseModalOpen(true)}
             />
           )}
 

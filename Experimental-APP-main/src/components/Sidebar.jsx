@@ -96,6 +96,10 @@ export const Sidebar = ({
       className="study-sidebar"
       style={{
         width: '68px',
+        minWidth: '68px',
+        maxWidth: '68px',
+        flexShrink: 0,
+        boxSizing: 'border-box',
         backgroundColor: '#FFFFFF',
         borderRight: '1px solid var(--border-subtle)',
         display: 'flex',
@@ -265,15 +269,17 @@ export const Sidebar = ({
             width: '38px',
             height: '38px',
             borderRadius: '50%',
-            backgroundColor: 'var(--pastel-lavender-bg)',
-            border: '2px solid var(--pastel-lavender-border)',
-            color: 'var(--pastel-lavender-text)',
+            backgroundColor: user?.avatarBg || 'var(--pastel-lavender-bg)',
+            border: user?.avatarBg ? `2px solid ${user.avatarBg}` : '2px solid var(--pastel-lavender-border)',
+            color: user?.avatarBg ? '#FFFFFF' : 'var(--pastel-lavender-text)',
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
             fontSize: '0.82rem',
             fontWeight: 800,
             cursor: 'pointer',
+            boxShadow: user?.avatarBg ? `0 2px 8px ${user.avatarBg}44` : 'none',
+            transition: 'all 0.2s ease',
           }}
           title={user?.name ? `${user.name} (${user.major})` : 'Profil Akun'}
           onClick={() => {

@@ -65,12 +65,67 @@ Simpan file dan restart dev server (`npm run dev`).
 
 ---
 
+## ⚡ Langkah 5: Mengatasi Status "Realtime Unhealthy" di Supabase
+
+Jika di dashboard Supabase (pada **Project Health** atau **Database > Replication**) bagian **Realtime** berstatus **"Unhealthy"**:
+
+### Penyebab:
+1. PostgreSQL logical replication membutuhkan konfigurasi `REPLICA IDENTITY FULL` pada tabel agar perubahan data (`UPDATE` dan `DELETE`) dapat di-streaming tanpa error replikasi.
+2. Publikasi `supabase_realtime` atau slot replikasi internal Supabase tertahan/stuck dan membutuhkan refresh bersih.
+
+### Cara Memperbaiki (Hanya 2 Langkah Cepat):
+1. **Jalankan Script Perbaikan di SQL Editor Supabase**:
+   Salin dan jalankan file [`supabase/fix_realtime.sql`](./supabase/fix_realtime.sql) di Supabase SQL Editor:
+   ```sql
+   BEGIN;
+   -- 1. Set REPLICA IDENTITY FULL
+   ALTER TABLE public.profiles REPLICA IDENTITY FULL;
+   ALTER TABLE public.courses REPLICA IDENTITY FULL;
+   ALTER TABLE public.schedules REPLICA IDENTITY FULL;
+   ALTER TABLE public.tasks REPLICA IDENTITY FULL;
+   ALTER TABLE public.friends REPLICA IDENTITY FULL;
+   ALTER TABLE public.notes REPLICA IDENTITY FULL;
+
+   -- 2. Buat ulang publikasi supabase_realtime
+   DROP PUBLICATION IF EXISTS supabase_realtime;
+   CREATE PUBLICATION supabase_realtime FOR TABLE public.profiles, public.courses, public.schedules, public.tasks, public.friends, public.notes;
+   COMMIT;
+   ```
+2. **Restart Project di Supabase Dashboard**:
+   - Buka **Project Settings** (ikon gerigi di kiri bawah dashboard Supabase).
+   - Klik menu **General**.
+   - Klik tombol **"Restart project"** (atau *"Restart database"*).
+   - Tunggu 1–2 menit, status Realtime akan kembali **Healthy 🟢**!
+
+> [!NOTE]
+> **Dual-Mode Resilient Sync:** Aplikasi telah dibekali Smart Polling Fallback otomatis. Walaupun Realtime Supabase sedang degraded atau Unhealthy, data tetap tersinkronisasi otomatis setiap 25 detik dan saat berpindah tab.
+
+---
+
+## 🌐 Langkah 6: Panduan Deployment ke Vercel
+
+1. **File `vercel.json` telah disiapkan:**
+   File `vercel.json` sudah dibuat di root project untuk menangani SPA rewrites sehingga tidak akan terjadi error `404 Not Found` saat me-refresh halaman.
+2. **Environment Variables di Vercel Dashboard:**
+   - Buka project Anda di [Vercel Dashboard](https://vercel.com).
+   - Masuk ke tab **Settings** -> **Environment Variables**.
+   - Tambahkan 2 variabel berikut:
+     - `VITE_SUPABASE_URL` = URL Project Supabase Anda
+     - `VITE_SUPABASE_ANON_KEY` = Anon Public Key Supabase Anda
+   - Klik **Save** dan lakukan **Redeploy**.
+
+---
+
 ## 🛠️ File-File Integrasi yang Telah Dibuat:
-- [`src/services/supabaseClient.js`](./src/services/supabaseClient.js): Inisialisasi client Supabase, manajemen kredensial dinamis, dan pengujian koneksi.
+- [`vercel.json`](./vercel.json): Konfigurasi SPA rewrite dan HTTP security headers untuk deployment Vercel.
+- [`supabase/fix_realtime.sql`](./supabase/fix_realtime.sql): Script SQL perbaikan instant untuk Realtime Unhealthy.
+- [`src/services/supabaseClient.js`](./src/services/supabaseClient.js): Inisialisasi client Supabase, diagnostic Realtime health check, dan manajemen kredensial dinamis.
 - [`src/services/supabaseService.js`](./src/services/supabaseService.js): Service CRUD lengkap (Auth, Profil, Tugas, Jadwal, Catatan, dan Sinkronisasi Batch).
-- [`src/services/storage.js`](./src/services/storage.js): Lapisan hybrid penyimpanan (LocalStorage + auto-sync ke Supabase).
-- [`src/components/SupabaseModal.jsx`](./src/components/SupabaseModal.jsx): Modal interaktif untuk konfigurasi, test koneksi, panduan, copy SQL schema, dan sinkronisasi manual.
-- [`supabase/schema.sql`](./supabase/schema.sql): Script DDL SQL lengkap beserta Row Level Security (RLS).
+- [`src/services/storage.js`](./src/services/storage.js): Lapisan hybrid penyimpanan dengan Dual-Mode Resilient Sync (Realtime WebSocket + Smart Polling Fallback).
+- [`src/components/Views/SupabaseView.jsx`](./src/components/Views/SupabaseView.jsx): Tampilan status koneksi live, diagnosa Realtime, dan tombol salin SQL perbaikan.
+- [`src/components/SupabaseModal.jsx`](./src/components/SupabaseModal.jsx): Modal interaktif untuk konfigurasi, diagnosa, dan tab khusus perbaikan Realtime.
+- [`supabase/schema.sql`](./supabase/schema.sql): Script DDL SQL lengkap beserta REPLICA IDENTITY FULL dan Row Level Security (RLS).
 - [`.env.example`](./.env.example) & [`.env`](./.env): Template konfigurasi environment variable.
 
-Selamat! Project Anda sekarang telah terhubung penuh ke Supabase Cloud Database! 🎉
+Selamat! Project Anda sekarang telah siap digunakan secara tangguh di Vercel dan Supabase! 🎉
+

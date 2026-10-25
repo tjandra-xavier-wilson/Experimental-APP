@@ -1,5 +1,5 @@
 // src/components/ConfirmDeleteModal.jsx
-import React, { useEffect } from 'react';
+import React, { useEffect, useRef } from 'react';
 import { Trash2, AlertTriangle, X, CheckCircle2 } from 'lucide-react';
 
 export const ConfirmDeleteModal = ({
@@ -12,16 +12,34 @@ export const ConfirmDeleteModal = ({
   isCompleted = false,
   description = null,
 }) => {
-  // Close on Escape key
+  const confirmBtnRef = useRef(null);
+
+  // Auto-focus confirm button on open & handle Enter / Escape keys
   useEffect(() => {
+    if (!isOpen) return;
+
+    // Focus confirm button so user can press Enter immediately
+    const timer = setTimeout(() => {
+      confirmBtnRef.current?.focus();
+    }, 50);
+
     const handleKeyDown = (e) => {
-      if (e.key === 'Escape' && isOpen) {
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        onClose();
+      } else if (e.key === 'Enter') {
+        e.preventDefault();
+        onConfirm();
         onClose();
       }
     };
+
     window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [isOpen, onClose]);
+    return () => {
+      clearTimeout(timer);
+      window.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [isOpen, onClose, onConfirm]);
 
   if (!isOpen) return null;
 
@@ -218,6 +236,7 @@ export const ConfirmDeleteModal = ({
           </button>
 
           <button
+            ref={confirmBtnRef}
             type="button"
             onClick={() => {
               onConfirm();
@@ -239,10 +258,20 @@ export const ConfirmDeleteModal = ({
               gap: '8px',
               boxShadow: '0 4px 14px rgba(220, 38, 38, 0.3)',
               transition: 'all 150ms ease',
+              outline: 'none',
             }}
           >
-            <Trash2 size={16} /> Ya, Hapus
+            <Trash2 size={16} /> Ya, Hapus (Enter ↵)
           </button>
+        </div>
+
+        {/* Keyboard shortcut hint */}
+        <div style={{ marginTop: '14px', fontSize: '0.74rem', color: '#94A3B8', display: 'flex', alignItems: 'center', gap: '6px' }}>
+          <span>Tekan</span>
+          <kbd style={{ padding: '2px 6px', background: '#F1F5F9', border: '1px solid #CBD5E1', borderRadius: '4px', fontSize: '0.7rem', fontWeight: 700, color: '#475569' }}>Enter ↵</kbd>
+          <span>untuk konfirmasi cepat atau</span>
+          <kbd style={{ padding: '2px 6px', background: '#F1F5F9', border: '1px solid #CBD5E1', borderRadius: '4px', fontSize: '0.7rem', fontWeight: 700, color: '#475569' }}>Esc</kbd>
+          <span>untuk batal</span>
         </div>
       </div>
     </div>

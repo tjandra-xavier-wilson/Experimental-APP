@@ -153,7 +153,7 @@ export const TasksView = ({
 
       {/* 2. Filter & Search Controls */}
       <div
-        className="card"
+        className="study-card"
         style={{
           padding: '14px 20px',
           display: 'flex',
@@ -161,6 +161,9 @@ export const TasksView = ({
           alignItems: 'center',
           flexWrap: 'wrap',
           gap: '14px',
+          backgroundColor: '#FFFFFF',
+          width: '100%',
+          boxSizing: 'border-box',
         }}
       >
         {/* Status Tabs */}
@@ -233,7 +236,7 @@ export const TasksView = ({
       {/* 3. Tasks List Grid */}
       {filteredTasks.length === 0 ? (
         <div
-          className="card"
+          className="study-card"
           style={{
             padding: '48px 24px',
             textAlign: 'center',
@@ -241,6 +244,10 @@ export const TasksView = ({
             flexDirection: 'column',
             alignItems: 'center',
             gap: '12px',
+            backgroundColor: '#FFFFFF',
+            width: '100%',
+            minHeight: '260px',
+            boxSizing: 'border-box',
           }}
         >
           <div
@@ -273,11 +280,11 @@ export const TasksView = ({
           </button>
         </div>
       ) : (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', width: '100%' }}>
           {filteredTasks.map((task) => (
             <div
               key={task.id}
-              className="card"
+              className="study-card"
               style={{
                 padding: '16px 20px',
                 display: 'flex',
@@ -287,6 +294,9 @@ export const TasksView = ({
                 flexWrap: 'wrap',
                 opacity: task.isCompleted ? 0.75 : 1,
                 borderLeft: `4px solid ${task.isCompleted ? '#10B981' : task.color || 'var(--pastel-lavender-text)'}`,
+                backgroundColor: '#FFFFFF',
+                width: '100%',
+                boxSizing: 'border-box',
                 transition: 'all 150ms ease',
               }}
             >

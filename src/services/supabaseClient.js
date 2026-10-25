@@ -108,6 +108,12 @@ export const getSupabase = () => {
         autoRefreshToken: true,
         detectSessionInUrl: true,
       },
+      realtime: {
+        params: {
+          eventsPerSecond: 10,
+        },
+        timeout: 8000,
+      },
     });
     lastClientKey = currentKey;
     return cachedClient;
@@ -117,7 +123,84 @@ export const getSupabase = () => {
   }
 };
 
-export const supabase = getSupabase() || createClient(DEFAULT_SUPABASE_URL, DEFAULT_SUPABASE_ANON_KEY);
+const defaultClientOptions = {
+  auth: {
+    persistSession: true,
+    autoRefreshToken: true,
+    detectSessionInUrl: true,
+  },
+  realtime: {
+    params: {
+      eventsPerSecond: 10,
+    },
+    timeout: 8000,
+  },
+};
+
+export const supabase =
+  getSupabase() ||
+  createClient(DEFAULT_SUPABASE_URL, DEFAULT_SUPABASE_ANON_KEY, defaultClientOptions);
+
+/**
+ * Tests Realtime WebSocket health against Supabase.
+ */
+export const testRealtimeHealth = async (timeoutMs = 5000) => {
+  const client = getSupabase();
+  if (!client) {
+    return {
+      healthy: false,
+      status: 'NOT_CONFIGURED',
+      message: 'Supabase client belum dikonfigurasi.',
+    };
+  }
+
+  return new Promise((resolve) => {
+    let finished = false;
+    const testChannel = client.channel(`rt-health-${Date.now()}`);
+
+    const timer = setTimeout(() => {
+      if (!finished) {
+        finished = true;
+        try {
+          client.removeChannel(testChannel);
+        } catch (e) {}
+        resolve({
+          healthy: false,
+          status: 'TIMED_OUT',
+          message:
+            'Realtime timeout. Layanan Realtime di Supabase berstatus Unhealthy. Jalankan script perbaikan SQL di Supabase SQL Editor lalu restart project di Supabase Dashboard.',
+        });
+      }
+    }, timeoutMs);
+
+    testChannel.subscribe((status, err) => {
+      if (finished) return;
+      if (status === 'SUBSCRIBED') {
+        finished = true;
+        clearTimeout(timer);
+        try {
+          client.removeChannel(testChannel);
+        } catch (e) {}
+        resolve({
+          healthy: true,
+          status: 'SUBSCRIBED',
+          message: 'Layanan Realtime Supabase Sehat & WebSocket Terhubung!',
+        });
+      } else if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
+        finished = true;
+        clearTimeout(timer);
+        try {
+          client.removeChannel(testChannel);
+        } catch (e) {}
+        resolve({
+          healthy: false,
+          status,
+          message: `Layanan Realtime Supabase Unhealthy (${status}): ${err?.message || 'Gagal koneksi channel'}`,
+        });
+      }
+    });
+  });
+};
 
 /**
  * Save custom credentials to localStorage for live interactive switching.

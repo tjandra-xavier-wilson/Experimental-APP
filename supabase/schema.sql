@@ -158,20 +158,28 @@ CREATE POLICY "Allow all notes operations" ON public.notes
     USING (true)
     WITH CHECK (true);
 
--- Optional: Realtime publication enablement for instant sync
+-- Set REPLICA IDENTITY FULL on all tables so UPDATE and DELETE events replicate cleanly
+ALTER TABLE public.profiles REPLICA IDENTITY FULL;
+ALTER TABLE public.courses REPLICA IDENTITY FULL;
+ALTER TABLE public.schedules REPLICA IDENTITY FULL;
+ALTER TABLE public.tasks REPLICA IDENTITY FULL;
+ALTER TABLE public.friends REPLICA IDENTITY FULL;
+ALTER TABLE public.notes REPLICA IDENTITY FULL;
+
+-- Recreate supabase_realtime publication for instant cross-device sync
 DO $$
 BEGIN
   IF NOT EXISTS (
-    SELECT 1 FROM pg_publication_tables 
-    WHERE pubname = 'supabase_realtime' AND tablename = 'tasks'
+    SELECT 1 FROM pg_publication WHERE pubname = 'supabase_realtime'
   ) THEN
-    ALTER PUBLICATION supabase_realtime ADD TABLE public.tasks;
-  END IF;
-  
-  IF NOT EXISTS (
-    SELECT 1 FROM pg_publication_tables 
-    WHERE pubname = 'supabase_realtime' AND tablename = 'schedules'
-  ) THEN
-    ALTER PUBLICATION supabase_realtime ADD TABLE public.schedules;
+    CREATE PUBLICATION supabase_realtime;
   END IF;
 END $$;
+
+ALTER PUBLICATION supabase_realtime ADD TABLE public.profiles;
+ALTER PUBLICATION supabase_realtime ADD TABLE public.courses;
+ALTER PUBLICATION supabase_realtime ADD TABLE public.schedules;
+ALTER PUBLICATION supabase_realtime ADD TABLE public.tasks;
+ALTER PUBLICATION supabase_realtime ADD TABLE public.friends;
+ALTER PUBLICATION supabase_realtime ADD TABLE public.notes;
+

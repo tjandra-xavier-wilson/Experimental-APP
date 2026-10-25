@@ -13,6 +13,7 @@ export const DailyView = ({
   onToggleTask,
   onOpenTaskModal,
   onOpenClassModal,
+  onNavigateToClasses,
   onSelectTaskForAI,
   onOpenAIRecommender,
   onAddFriend,
@@ -38,6 +39,7 @@ export const DailyView = ({
         <ClassesCard
           schedules={schedules}
           onOpenClassModal={onOpenClassModal}
+          onNavigateToClasses={onNavigateToClasses}
         />
       </div>
 

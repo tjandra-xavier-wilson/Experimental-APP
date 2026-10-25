@@ -20,23 +20,23 @@ export const ClassesView = ({
   onOpenClassModal,
   onDeleteSchedule,
 }) => {
-  const [selectedDay, setSelectedDay] = useState(0); // 0 = Semua, 1=Senin, 2=Selasa, etc.
+  const [selectedDay, setSelectedDay] = useState('all'); // 'all' = Semua, 1=Senin, 2=Selasa, ..., 0=Minggu
   const [searchQuery, setSearchQuery] = useState('');
   const [scheduleToDelete, setScheduleToDelete] = useState(null);
 
   const daysList = [
-    { id: 0, name: 'Semua Hari' },
+    { id: 'all', name: 'Semua Hari' },
     { id: 1, name: 'Senin' },
     { id: 2, name: 'Selasa' },
     { id: 3, name: 'Rabu' },
     { id: 4, name: 'Kamis' },
     { id: 5, name: 'Jumat' },
     { id: 6, name: 'Sabtu' },
-    { id: 7, name: 'Minggu' },
+    { id: 0, name: 'Minggu' },
   ];
 
   const filteredSchedules = schedules.filter((s) => {
-    const matchesDay = selectedDay === 0 || Number(s.dayOfWeek) === selectedDay;
+    const matchesDay = selectedDay === 'all' || Number(s.dayOfWeek) === Number(selectedDay);
     const matchesSearch =
       !searchQuery.trim() ||
       (s.courseName && s.courseName.toLowerCase().includes(searchQuery.toLowerCase())) ||
@@ -46,7 +46,7 @@ export const ClassesView = ({
   });
 
   const getDayName = (dayNum) => {
-    const day = daysList.find((d) => d.id === Number(dayNum));
+    const day = daysList.find((d) => String(d.id) === String(dayNum));
     return day ? day.name : 'Senin';
   };
 
@@ -112,7 +112,7 @@ export const ClassesView = ({
 
       {/* 2. Filter Bar */}
       <div
-        className="card"
+        className="study-card"
         style={{
           padding: '14px 20px',
           display: 'flex',
@@ -120,6 +120,9 @@ export const ClassesView = ({
           alignItems: 'center',
           flexWrap: 'wrap',
           gap: '14px',
+          backgroundColor: '#FFFFFF',
+          width: '100%',
+          boxSizing: 'border-box',
         }}
       >
         {/* Day Pills */}
@@ -168,7 +171,7 @@ export const ClassesView = ({
       {/* 3. Schedules Grid */}
       {filteredSchedules.length === 0 ? (
         <div
-          className="card"
+          className="study-card"
           style={{
             padding: '48px 24px',
             textAlign: 'center',
@@ -176,6 +179,10 @@ export const ClassesView = ({
             flexDirection: 'column',
             alignItems: 'center',
             gap: '12px',
+            backgroundColor: '#FFFFFF',
+            width: '100%',
+            minHeight: '260px',
+            boxSizing: 'border-box',
           }}
         >
           <div
@@ -193,7 +200,7 @@ export const ClassesView = ({
             <BookOpen size={26} />
           </div>
           <h3 style={{ fontSize: '1.1rem', fontWeight: 700, margin: 0 }}>
-            {selectedDay === 0 ? 'Belum Ada Jadwal Kelas' : `Tidak ada jadwal untuk hari ${getDayName(selectedDay)}`}
+            {selectedDay === 'all' ? 'Belum Ada Jadwal Kelas' : `Tidak ada jadwal untuk hari ${getDayName(selectedDay)}`}
           </h3>
           <p style={{ margin: 0, fontSize: '0.85rem', color: 'var(--text-muted)', maxWidth: '420px' }}>
             Tambahkan mata pelajaran atau jadwal kuliah rutin Anda agar tertata rapi dan tersinkronisasi otomatis.
@@ -213,18 +220,21 @@ export const ClassesView = ({
             display: 'grid',
             gridTemplateColumns: 'repeat(auto-fill, minmax(320px, 1fr))',
             gap: '18px',
+            width: '100%',
           }}
         >
           {filteredSchedules.map((sch) => (
             <div
               key={sch.id}
-              className="card"
+              className="study-card"
               style={{
                 padding: '20px',
                 display: 'flex',
                 flexDirection: 'column',
                 justifyContent: 'space-between',
                 borderLeft: `5px solid ${sch.color || 'var(--pastel-lavender-text)'}`,
+                backgroundColor: '#FFFFFF',
+                boxSizing: 'border-box',
                 transition: 'transform 150ms ease, box-shadow 150ms ease',
               }}
             >
@@ -309,7 +319,7 @@ export const ClassesView = ({
           }
         }}
         title="Hapus Jadwal Kuliah / Kelas?"
-        itemName={scheduleToDelete ? `${scheduleToDelete.courseName || scheduleToDelete.name || 'Jadwal'} (${scheduleToDelete.day || ''})` : ''}
+        itemName={scheduleToDelete ? `${scheduleToDelete.courseName || scheduleToDelete.name || 'Jadwal'} (Hari ${getDayName(scheduleToDelete.dayOfWeek)})` : ''}
         itemType="jadwal"
       />
     </div>

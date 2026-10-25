@@ -16,12 +16,16 @@ import {
   FileCode,
   ShieldCheck,
   Sparkles,
+  Radio,
+  AlertTriangle,
+  Wrench,
 } from 'lucide-react';
 import {
   getSupabaseConfig,
   saveSupabaseConfig,
   clearSupabaseConfig,
   testSupabaseConnection,
+  testRealtimeHealth,
 } from '../services/supabaseClient';
 import { syncAllLocalDataToSupabase } from '../services/supabaseService';
 import { getUserData } from '../services/storage';
@@ -35,11 +39,15 @@ export const SupabaseModal = ({ isOpen, onClose, user, onDataSynced }) => {
   const [testing, setTesting] = useState(false);
   const [testResult, setTestResult] = useState(null);
 
+  const [testingRealtime, setTestingRealtime] = useState(false);
+  const [realtimeTestResult, setRealtimeTestResult] = useState(null);
+  const [copiedFixSql, setCopiedFixSql] = useState(false);
+
   const [syncing, setSyncing] = useState(false);
   const [syncResult, setSyncResult] = useState(null);
 
   const [copiedSql, setCopiedSql] = useState(false);
-  const [activeTab, setActiveTab] = useState('config'); // 'config' | 'guide' | 'schema'
+  const [activeTab, setActiveTab] = useState('config'); // 'config' | 'guide' | 'schema' | 'realtime'
 
   // Load active config on modal open
   useEffect(() => {
@@ -265,11 +273,75 @@ DROP POLICY IF EXISTS "Allow all friends operations" ON public.friends;
 CREATE POLICY "Allow all friends operations" ON public.friends FOR ALL USING (true) WITH CHECK (true);
 DROP POLICY IF EXISTS "Allow all notes operations" ON public.notes;
 CREATE POLICY "Allow all notes operations" ON public.notes FOR ALL USING (true) WITH CHECK (true);
+
+-- Set REPLICA IDENTITY FULL on all tables so UPDATE and DELETE events replicate cleanly
+ALTER TABLE public.profiles REPLICA IDENTITY FULL;
+ALTER TABLE public.courses REPLICA IDENTITY FULL;
+ALTER TABLE public.schedules REPLICA IDENTITY FULL;
+ALTER TABLE public.tasks REPLICA IDENTITY FULL;
+ALTER TABLE public.friends REPLICA IDENTITY FULL;
+ALTER TABLE public.notes REPLICA IDENTITY FULL;
+
+-- Recreate supabase_realtime publication for instant cross-device sync
+DROP PUBLICATION IF EXISTS supabase_realtime;
+CREATE PUBLICATION supabase_realtime FOR TABLE public.profiles, public.courses, public.schedules, public.tasks, public.friends, public.notes;
 `;
 
     navigator.clipboard.writeText(sqlScript);
     setCopiedSql(true);
     setTimeout(() => setCopiedSql(false), 2500);
+  };
+
+  const handleTestRealtime = async () => {
+    setTestingRealtime(true);
+    setRealtimeTestResult(null);
+    try {
+      const res = await testRealtimeHealth();
+      setRealtimeTestResult(res);
+    } catch (e) {
+      setRealtimeTestResult({ healthy: false, message: e.message });
+    } finally {
+      setTestingRealtime(false);
+    }
+  };
+
+  const handleCopyFixSql = () => {
+    const fixSql = `-- ==========================================================
+-- SUPABASE REALTIME REPAIR & STABILIZATION SCRIPT
+-- ==========================================================
+-- Jalankan script ini di Supabase SQL Editor jika Realtime Unhealthy:
+BEGIN;
+
+-- 1. Set REPLICA IDENTITY FULL pada semua tabel
+-- PENTING: PostgreSQL mewajibkan REPLICA IDENTITY FULL agar event UPDATE dan DELETE
+-- pada logical replication realtime dapat dikirim tanpa error replikasi yang membuat Realtime Unhealthy.
+ALTER TABLE public.profiles REPLICA IDENTITY FULL;
+ALTER TABLE public.courses REPLICA IDENTITY FULL;
+ALTER TABLE public.schedules REPLICA IDENTITY FULL;
+ALTER TABLE public.tasks REPLICA IDENTITY FULL;
+ALTER TABLE public.friends REPLICA IDENTITY FULL;
+ALTER TABLE public.notes REPLICA IDENTITY FULL;
+
+-- 2. Buat ulang publikasi supabase_realtime secara bersih
+DROP PUBLICATION IF EXISTS supabase_realtime;
+CREATE PUBLICATION supabase_realtime;
+
+-- 3. Daftarkan seluruh tabel ke publikasi realtime
+ALTER PUBLICATION supabase_realtime ADD TABLE public.profiles;
+ALTER PUBLICATION supabase_realtime ADD TABLE public.courses;
+ALTER PUBLICATION supabase_realtime ADD TABLE public.schedules;
+ALTER PUBLICATION supabase_realtime ADD TABLE public.tasks;
+ALTER PUBLICATION supabase_realtime ADD TABLE public.friends;
+ALTER PUBLICATION supabase_realtime ADD TABLE public.notes;
+
+COMMIT;
+
+-- 4. Cek hasil pendaftaran
+SELECT pubname, tablename FROM pg_publication_tables WHERE pubname = 'supabase_realtime';`;
+
+    navigator.clipboard.writeText(fixSql);
+    setCopiedFixSql(true);
+    setTimeout(() => setCopiedFixSql(false), 2500);
   };
 
   return (
@@ -392,6 +464,25 @@ CREATE POLICY "Allow all notes operations" ON public.notes FOR ALL USING (true) 
             }}
           >
             💻 SQL Schema
+          </button>
+          <button
+            type="button"
+            onClick={() => setActiveTab('realtime')}
+            style={{
+              flex: 1,
+              padding: '7px 12px',
+              border: 'none',
+              borderRadius: 'var(--radius-sm)',
+              background: activeTab === 'realtime' ? '#FFFFFF' : 'transparent',
+              color: activeTab === 'realtime' ? '#D97706' : 'var(--text-muted)',
+              fontWeight: 600,
+              fontSize: '0.84rem',
+              cursor: 'pointer',
+              boxShadow: activeTab === 'realtime' ? 'var(--shadow-sm)' : 'none',
+              transition: 'all var(--transition-fast)',
+            }}
+          >
+            🛠️ Perbaiki Realtime
           </button>
         </div>
 
@@ -788,8 +879,187 @@ CREATE POLICY "Allow all tasks operations" ON public.tasks FOR ALL USING (true) 
 DROP POLICY IF EXISTS "Allow all friends operations" ON public.friends;
 CREATE POLICY "Allow all friends operations" ON public.friends FOR ALL USING (true) WITH CHECK (true);
 DROP POLICY IF EXISTS "Allow all notes operations" ON public.notes;
-CREATE POLICY "Allow all notes operations" ON public.notes FOR ALL USING (true) WITH CHECK (true);`}
+CREATE POLICY "Allow all notes operations" ON public.notes FOR ALL USING (true) WITH CHECK (true);
+
+-- Set REPLICA IDENTITY FULL on all tables so UPDATE and DELETE events replicate cleanly
+ALTER TABLE public.profiles REPLICA IDENTITY FULL;
+ALTER TABLE public.courses REPLICA IDENTITY FULL;
+ALTER TABLE public.schedules REPLICA IDENTITY FULL;
+ALTER TABLE public.tasks REPLICA IDENTITY FULL;
+ALTER TABLE public.friends REPLICA IDENTITY FULL;
+ALTER TABLE public.notes REPLICA IDENTITY FULL;
+
+-- Recreate supabase_realtime publication
+DROP PUBLICATION IF EXISTS supabase_realtime;
+CREATE PUBLICATION supabase_realtime FOR TABLE public.profiles, public.courses, public.schedules, public.tasks, public.friends, public.notes;`}
             </pre>
+          </div>
+        )}
+
+        {/* Tab 4: Fix Realtime Unhealthy */}
+        {activeTab === 'realtime' && (
+          <div style={{ flex: 1, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '16px' }}>
+            {/* Realtime Diagnosis Card */}
+            <div
+              style={{
+                padding: '16px',
+                borderRadius: 'var(--radius-md)',
+                backgroundColor: '#FFFBEB',
+                border: '1px solid #FDE68A',
+                display: 'flex',
+                flexDirection: 'column',
+                gap: '12px',
+              }}
+            >
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '8px' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <AlertTriangle size={18} color="#D97706" />
+                  <span style={{ fontWeight: 700, fontSize: '0.92rem', color: '#92400E' }}>
+                    Mengapa Realtime Supabase Berstatus "Unhealthy"?
+                  </span>
+                </div>
+                <button
+                  type="button"
+                  onClick={handleTestRealtime}
+                  disabled={testingRealtime}
+                  className="btn-secondary"
+                  style={{ padding: '6px 12px', fontSize: '0.78rem' }}
+                >
+                  <Radio size={13} className={testingRealtime ? 'animate-spin' : ''} />
+                  {testingRealtime ? 'Menguji Realtime...' : 'Diagnosa Realtime Sekarang'}
+                </button>
+              </div>
+
+              <p style={{ margin: 0, fontSize: '0.8rem', color: '#B45309', lineHeight: 1.55 }}>
+                Pada dashboard Supabase, service <strong>Realtime</strong> dapat berstatus <em>Unhealthy</em> karena engine logical replication PostgreSQL memerlukan konfigurasi <code>REPLICA IDENTITY FULL</code> pada tabel agar pembaruan data dapat direplikasi tanpa memicu error replikasi.
+              </p>
+
+              {realtimeTestResult && (
+                <div
+                  style={{
+                    padding: '10px 14px',
+                    borderRadius: '6px',
+                    backgroundColor: realtimeTestResult.healthy ? '#F0FDF4' : '#FEF2F2',
+                    border: realtimeTestResult.healthy ? '1px solid #BBF7D0' : '1px solid #FECACA',
+                    color: realtimeTestResult.healthy ? '#15803D' : '#B91C1C',
+                    fontSize: '0.82rem',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '8px',
+                  }}
+                >
+                  {realtimeTestResult.healthy ? <CheckCircle2 size={16} /> : <AlertTriangle size={16} />}
+                  <span>{realtimeTestResult.message}</span>
+                </div>
+              )}
+            </div>
+
+            {/* Step 1: SQL Fix */}
+            <div
+              style={{
+                padding: '16px',
+                borderRadius: 'var(--radius-md)',
+                backgroundColor: 'var(--bg-card-subtle)',
+                display: 'flex',
+                flexDirection: 'column',
+                gap: '10px',
+              }}
+            >
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <span style={{ fontWeight: 700, fontSize: '0.88rem' }}>
+                  Langkah 1: Jalankan Script SQL Perbaikan Realtime
+                </span>
+                <button
+                  type="button"
+                  onClick={handleCopyFixSql}
+                  className="btn-primary"
+                  style={{ padding: '6px 12px', fontSize: '0.76rem', display: 'flex', alignItems: 'center', gap: '4px' }}
+                >
+                  {copiedFixSql ? <Check size={13} /> : <Copy size={13} />}
+                  {copiedFixSql ? 'SQL Tersalin!' : 'Salin Script SQL'}
+                </button>
+              </div>
+
+              <p style={{ margin: 0, fontSize: '0.78rem', color: 'var(--text-muted)' }}>
+                Buka menu <strong>SQL Editor</strong> di dashboard Supabase Anda, buat query baru, tempel (paste) script di bawah, lalu klik <strong>Run</strong>:
+              </p>
+
+              <pre
+                style={{
+                  margin: 0,
+                  padding: '12px',
+                  borderRadius: '6px',
+                  backgroundColor: '#0F172A',
+                  color: '#38BDF8',
+                  fontSize: '0.74rem',
+                  fontFamily: 'monospace',
+                  maxHeight: '130px',
+                  overflowY: 'auto',
+                }}
+              >
+{`BEGIN;
+ALTER TABLE public.profiles REPLICA IDENTITY FULL;
+ALTER TABLE public.courses REPLICA IDENTITY FULL;
+ALTER TABLE public.schedules REPLICA IDENTITY FULL;
+ALTER TABLE public.tasks REPLICA IDENTITY FULL;
+ALTER TABLE public.friends REPLICA IDENTITY FULL;
+ALTER TABLE public.notes REPLICA IDENTITY FULL;
+
+DROP PUBLICATION IF EXISTS supabase_realtime;
+CREATE PUBLICATION supabase_realtime FOR TABLE public.profiles, public.courses, public.schedules, public.tasks, public.friends, public.notes;
+COMMIT;`}
+              </pre>
+            </div>
+
+            {/* Step 2: Restart Project */}
+            <div
+              style={{
+                padding: '16px',
+                borderRadius: 'var(--radius-md)',
+                backgroundColor: 'var(--bg-card-subtle)',
+                display: 'flex',
+                flexDirection: 'column',
+                gap: '8px',
+              }}
+            >
+              <span style={{ fontWeight: 700, fontSize: '0.88rem' }}>
+                Langkah 2: Restart Project di Supabase Dashboard
+              </span>
+              <p style={{ margin: 0, fontSize: '0.78rem', color: 'var(--text-muted)', lineHeight: 1.55 }}>
+                Setelah menjalankan query di atas:
+                <br />
+                1. Buka <strong>Project Settings</strong> (ikon gerigi di kiri bawah dashboard Supabase).
+                <br />
+                2. Pilih menu <strong>General</strong>.
+                <br />
+                3. Scroll ke bawah dan klik tombol <strong>"Restart project"</strong> (atau <em>"Restart database"</em>).
+                <br />
+                4. Tunggu 1–2 menit hingga project selesai restart. Status Realtime akan kembali <strong>Healthy 🟢</strong>!
+              </p>
+            </div>
+
+            {/* Dual-Mode Architecture Info */}
+            <div
+              style={{
+                padding: '14px',
+                borderRadius: 'var(--radius-md)',
+                backgroundColor: '#F0FDF4',
+                border: '1px solid #BBF7D0',
+                display: 'flex',
+                gap: '10px',
+                alignItems: 'flex-start',
+              }}
+            >
+              <CheckCircle2 size={18} color="#15803D" style={{ flexShrink: 0, marginTop: '2px' }} />
+              <div>
+                <span style={{ fontWeight: 700, fontSize: '0.84rem', color: '#15803D' }}>
+                  Aplikasi Aman: Dual-Mode Resilient Fallback Aktif
+                </span>
+                <p style={{ margin: '4px 0 0 0', fontSize: '0.78rem', color: '#166534', lineHeight: 1.5 }}>
+                  Aplikasi ini dirancang tahan gangguan: saat Realtime Supabase mengalami kendala (unhealthy), sistem otomatis beralih ke mode <strong>Smart Polling Fallback</strong> (sinkronisasi otomatis di latar belakang setiap 25 detik & saat tab dibuka). Data tugas dan jadwal Anda tetap aman dan tersinkronisasi 100%!
+                </p>
+              </div>
+            </div>
           </div>
         )}
       </div>
