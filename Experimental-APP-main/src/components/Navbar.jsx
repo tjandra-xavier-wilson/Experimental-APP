@@ -13,10 +13,16 @@ import {
   Plus,
   Database,
   RotateCw,
+  Flame,
 } from 'lucide-react';
 
 import { ICTLogo } from './ICTLogo';
 import { isSupabaseConfigured } from '../services/supabaseClient';
+import {
+  getLiveFocusMetrics,
+  FOCUS_MODE_EVENT,
+  formatDurationHMS,
+} from '../services/focusModeService';
 
 export const Navbar = ({
   user,
@@ -54,6 +60,20 @@ export const Navbar = ({
   }, [reminders]);
 
   const isSMA = user?.educationLevel === 'Siswa SMA/SMK' || user?.educationLevel === 'SMA';
+
+  const [focusMetrics, setFocusMetrics] = useState(getLiveFocusMetrics());
+
+  useEffect(() => {
+    const handleUpdate = () => setFocusMetrics(getLiveFocusMetrics());
+    window.addEventListener(FOCUS_MODE_EVENT, handleUpdate);
+    const interval = setInterval(() => {
+      setFocusMetrics(getLiveFocusMetrics());
+    }, 1000);
+    return () => {
+      window.removeEventListener(FOCUS_MODE_EVENT, handleUpdate);
+      clearInterval(interval);
+    };
+  }, []);
 
   return (
     <header
@@ -234,6 +254,37 @@ export const Navbar = ({
             {isOnline ? <Wifi size={13} /> : <WifiOff size={13} />}
             <span>{isOnline ? 'Cloud Sync Aktif' : 'Mode Offline'}</span>
           </div>
+
+          {/* Live Focus Mode Indicator */}
+          {focusMetrics.isActive && (
+            <button
+              type="button"
+              onClick={() => {
+                try {
+                  localStorage.setItem('studycal_active_tab_v1', 'settings');
+                  window.history.replaceState(null, '', '#settings');
+                  window.dispatchEvent(new HashChangeEvent('hashchange'));
+                } catch {}
+              }}
+              className="pastel-badge badge-rose"
+              style={{
+                fontSize: '0.78rem',
+                padding: '4px 10px',
+                cursor: 'pointer',
+                border: '1px solid #FECDD3',
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '6px',
+                backgroundColor: '#FFE4E6',
+                color: '#BE123C',
+                fontWeight: 800,
+              }}
+              title="Mode Fokus Aktif! Klik untuk melihat stopwatch di Pengaturan"
+            >
+              <Flame size={13} color="#E11D48" />
+              <span>Fokus: {formatDurationHMS(focusMetrics.todaySeconds)}</span>
+            </button>
+          )}
 
           {/* AI Study Recommendation Trigger */}
           <button

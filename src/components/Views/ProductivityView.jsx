@@ -19,6 +19,13 @@ import {
   X,
   Check,
 } from 'lucide-react';
+import {
+  getLiveFocusMetrics,
+  FOCUS_MODE_EVENT,
+  resetFocusMode,
+  checkAndAwardStreak,
+  getFocusModeState,
+} from '../../services/focusModeService';
 
 export const ProductivityView = ({
   tasks = [],
@@ -31,6 +38,9 @@ export const ProductivityView = ({
   const [timeframe, setTimeframe] = useState('weekly'); // 'weekly' | 'daily'
   const [chartType, setChartType] = useState('line'); // 'line' | 'bar'
   const [hoveredIndex, setHoveredIndex] = useState(null);
+
+  // Live Focus Mode Metrics
+  const [focusMetrics, setFocusMetrics] = useState(getLiveFocusMetrics());
 
   // Streak state stored in localStorage (defaults to 0 on initial/reset)
   const [streak, setStreak] = useState(() => {
@@ -57,6 +67,33 @@ export const ProductivityView = ({
   const [showToast, setShowToast] = useState(false);
   const confirmBtnRef = useRef(null);
 
+  // Sync focus mode live timer and streak updates
+  useEffect(() => {
+    const handleUpdate = () => {
+      setFocusMetrics(getLiveFocusMetrics());
+      try {
+        const val = localStorage.getItem('studycal_study_streak_v1');
+        if (val !== null) setStreak(Math.max(0, parseInt(val, 10)));
+        const rec = localStorage.getItem('studycal_streak_record_v1');
+        if (rec !== null) setStreakRecord(Math.max(0, parseInt(rec, 10)));
+      } catch {}
+    };
+
+    window.addEventListener(FOCUS_MODE_EVENT, handleUpdate);
+    const interval = setInterval(() => {
+      const live = getLiveFocusMetrics();
+      setFocusMetrics(live);
+      if (live.isActive && live.todaySeconds >= 3600 && !live.isStreakAwarded) {
+        checkAndAwardStreak(getFocusModeState());
+      }
+    }, 1000);
+
+    return () => {
+      window.removeEventListener(FOCUS_MODE_EVENT, handleUpdate);
+      clearInterval(interval);
+    };
+  }, []);
+
   // Handle keyboard Enter & Escape for Reset Modal
   useEffect(() => {
     if (!isResetModalOpen) return;
@@ -82,28 +119,31 @@ export const ProductivityView = ({
     };
   }, [isResetModalOpen, resetTasksCheck]);
 
-  // Real calculations derived from actual task data
+  // Real calculations derived from actual task data + Mode Fokus
   const completedTasks = tasks.filter((t) => t.isCompleted);
   const completedCount = completedTasks.length;
   const totalCount = tasks.length;
   const completionRate = totalCount > 0 ? Math.round((completedCount / totalCount) * 100) : 0;
 
-  // Real duration in hours computed from completed tasks (estimatedMinutes)
-  const totalDurationHours = completedTasks.reduce((acc, t) => {
+  // Real duration in hours computed from completed tasks + Mode Fokus
+  const taskDurationHours = completedTasks.reduce((acc, t) => {
     const mins = Number(t.estimatedMinutes) || 45;
     return acc + mins / 60;
   }, 0);
+  const totalDurationHours = Number((taskDurationHours + focusMetrics.totalFocusHours).toFixed(1));
   const totalDurationStr = totalDurationHours.toFixed(1);
   const weeklyTargetHours = 20;
   const targetProgressPct = Math.min(100, Math.round((totalDurationHours / weeklyTargetHours) * 100));
 
-  // Focus score starts from 0 if no tasks are completed
+  // Focus score starts from 0 if no tasks are completed & no focus mode
+  const focusModeBonus = Math.min(35, Math.round(focusMetrics.totalFocusHours * 12));
   const avgFocusScore =
-    completedCount > 0
-      ? Math.min(100, Math.max(50, Math.round(completionRate * 0.75 + (totalDurationHours > 0 ? 25 : 10))))
+    completedCount > 0 || focusMetrics.totalSeconds > 0
+      ? Math.min(100, Math.max(50, Math.round(completionRate * 0.65 + focusModeBonus + (totalDurationHours > 0 ? 25 : 10))))
       : 0;
 
-  // Real Weekly Data series (Senin s/d Minggu)
+  // Real Weekly Data series (Senin s/d Minggu) + Mode Fokus
+  const todayDayId = new Date().getDay();
   const weeklyData = [
     { label: 'Senin', short: 'Sen', dayId: 1 },
     { label: 'Selasa', short: 'Sel', dayId: 2 },
@@ -123,14 +163,23 @@ export const ProductivityView = ({
       return false;
     });
 
-    const hours = matchingTasks.reduce((sum, t) => sum + (Number(t.estimatedMinutes) || 45) / 60, 0);
+    const taskHours = matchingTasks.reduce((sum, t) => sum + (Number(t.estimatedMinutes) || 45) / 60, 0);
+    const focusHoursForDay = day.dayId === todayDayId ? focusMetrics.todayFocusHours : 0;
+    const totalDayHours = Number((taskHours + focusHoursForDay).toFixed(1));
+
+    const totalActions = matchingTasks.length + (focusHoursForDay > 0 ? 1 : 0);
     return {
       label: day.label,
       short: day.short,
-      value: Number(hours.toFixed(1)),
+      value: totalDayHours,
       tasks: matchingTasks.length,
-      score: matchingTasks.length > 0 ? Math.min(100, 75 + matchingTasks.length * 8) : 0,
-      focusDesc: matchingTasks.length > 0 ? `${matchingTasks.length} tugas tuntas` : 'Belum ada aktivitas',
+      score: totalActions > 0 ? Math.min(100, 75 + totalActions * 8) : 0,
+      focusDesc:
+        focusHoursForDay > 0
+          ? `${matchingTasks.length} tugas + ${focusHoursForDay}j fokus`
+          : matchingTasks.length > 0
+          ? `${matchingTasks.length} tugas tuntas`
+          : 'Belum ada aktivitas',
     };
   });
 
@@ -220,6 +269,7 @@ export const ProductivityView = ({
 
     setStreak(0);
     setStreakRecord(0);
+    resetFocusMode();
 
     if (resetTasksCheck && onResetTasksStatus) {
       onResetTasksStatus();
