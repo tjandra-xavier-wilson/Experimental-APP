@@ -94,6 +94,28 @@ export const ProductivityView = ({
     };
   }, []);
 
+  // Action: Execute Reset dari Awal
+  const executeReset = () => {
+    try {
+      localStorage.setItem('studycal_study_streak_v1', '0');
+      localStorage.setItem('studycal_streak_record_v1', '0');
+      localStorage.removeItem('studycal_productivity_history_v1');
+      localStorage.setItem('studycal_productivity_reset_timestamp', new Date().toISOString());
+    } catch (e) {}
+
+    setStreak(0);
+    setStreakRecord(0);
+    resetFocusMode();
+
+    if (resetTasksCheck && onResetTasksStatus) {
+      onResetTasksStatus();
+    }
+
+    setIsResetModalOpen(false);
+    setShowToast(true);
+    setTimeout(() => setShowToast(false), 3800);
+  };
+
   // Handle keyboard Enter & Escape for Reset Modal
   useEffect(() => {
     if (!isResetModalOpen) return;
@@ -258,27 +280,7 @@ export const ProductivityView = ({
     };
   });
 
-  // Action: Execute Reset dari Awal
-  const executeReset = () => {
-    try {
-      localStorage.setItem('studycal_study_streak_v1', '0');
-      localStorage.setItem('studycal_streak_record_v1', '0');
-      localStorage.removeItem('studycal_productivity_history_v1');
-      localStorage.setItem('studycal_productivity_reset_timestamp', new Date().toISOString());
-    } catch (e) {}
 
-    setStreak(0);
-    setStreakRecord(0);
-    resetFocusMode();
-
-    if (resetTasksCheck && onResetTasksStatus) {
-      onResetTasksStatus();
-    }
-
-    setIsResetModalOpen(false);
-    setShowToast(true);
-    setTimeout(() => setShowToast(false), 3800);
-  };
 
   const isFreshZeroState = totalDurationHours === 0 && completedCount === 0;
 

@@ -167,6 +167,39 @@ export function App() {
   const [isSupabaseModalOpen, setIsSupabaseModalOpen] = useState(false);
   const [realtimeStatus, setRealtimeStatus] = useState('CONNECTING'); // 'CONNECTING' | 'SUBSCRIBED' | 'FALLBACK_POLLING' | 'TIMED_OUT' | 'CHANNEL_ERROR' | 'CLOSED'
 
+  // Helper to load user bundle
+  const loadUserData = (user, skipCloudPull = false) => {
+    setCurrentUser(user);
+    const data = getUserData(user.id);
+    if (data) {
+      setTasks(data.tasks || []);
+      setSchedules(data.schedules || []);
+      setCourses(data.courses || []);
+      setCategories(data.categories || []);
+      setReminders(data.reminders || []);
+    }
+    setFriends(getFriends(user.id));
+    setNotes(getNotes(user.id));
+
+    // If Supabase Cloud is configured, pull latest remote data in background
+    if (!skipCloudPull && isSupabaseConfigured() && user?.id) {
+      pullDataFromSupabase(user.id)
+        .then((merged) => {
+          if (merged) {
+            if (Array.isArray(merged.tasks)) setTasks(merged.tasks);
+            if (Array.isArray(merged.schedules)) setSchedules(merged.schedules);
+            if (Array.isArray(merged.courses)) setCourses(merged.courses);
+            if (Array.isArray(merged.friends)) setFriends(merged.friends);
+            if (Array.isArray(merged.notes)) setNotes(merged.notes);
+            if (merged.profile) {
+              setCurrentUser((prev) => ({ ...prev, ...merged.profile }));
+            }
+          }
+        })
+        .catch((e) => console.warn('Cloud sync error on load:', e));
+    }
+  };
+
   // 1. Initial Session & Supabase Cloud Sync
   useEffect(() => {
     let unsubscribe = null;
@@ -316,38 +349,7 @@ export function App() {
     };
   }, []);
 
-  // Helper to load user bundle
-  const loadUserData = (user, skipCloudPull = false) => {
-    setCurrentUser(user);
-    const data = getUserData(user.id);
-    if (data) {
-      setTasks(data.tasks || []);
-      setSchedules(data.schedules || []);
-      setCourses(data.courses || []);
-      setCategories(data.categories || []);
-      setReminders(data.reminders || []);
-    }
-    setFriends(getFriends(user.id));
-    setNotes(getNotes(user.id));
 
-    // If Supabase Cloud is configured, pull latest remote data in background
-    if (!skipCloudPull && isSupabaseConfigured() && user?.id) {
-      pullDataFromSupabase(user.id)
-        .then((merged) => {
-          if (merged) {
-            if (Array.isArray(merged.tasks)) setTasks(merged.tasks);
-            if (Array.isArray(merged.schedules)) setSchedules(merged.schedules);
-            if (Array.isArray(merged.courses)) setCourses(merged.courses);
-            if (Array.isArray(merged.friends)) setFriends(merged.friends);
-            if (Array.isArray(merged.notes)) setNotes(merged.notes);
-            if (merged.profile) {
-              setCurrentUser((prev) => ({ ...prev, ...merged.profile }));
-            }
-          }
-        })
-        .catch((e) => console.warn('Cloud sync error on load:', e));
-    }
-  };
 
   // Auth Handlers
   const handleAuthSuccess = async (user) => {
