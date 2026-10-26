@@ -37,6 +37,7 @@ import {
   searchRegisteredProfiles,
 } from '../services/supabaseService';
 import { SupabaseModal } from './SupabaseModal';
+import { ICTLogo } from './ICTLogo';
 
 export const AuthScreen = ({ isOpen = true, onAuthSuccess }) => {
   const [isSignUp, setIsSignUp] = useState(false);
